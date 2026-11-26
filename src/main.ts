@@ -1,0 +1,1146 @@
+import "./styles/tokens.css";
+import "./styles/base.css";
+import "./styles/components.css";
+import "./styles/shell.css";
+import "./styles/library.css";
+import "./styles/home.css";
+import "./styles/fullscreen.css";
+import "./styles/set.css";
+import "./styles/chart.css";
+import "./styles/player.css";
+import "./styles/settings.css";
+import "./styles/welcome.css";
+import "./styles/import.css";
+import "./styles/history.css";
+import "./styles/care.css";
+import "./styles/pools.css";
+import "./styles/matches.css";
+import "./styles/delete.css";
+import "./styles/skills.css";
+import "./styles/browse.css";
+import "./styles/hud-editor.css";
+import "./styles/score.css";
+import "./styles/consent.css";
+import "./styles/roulette.css";
+import "./styles/skins.css";
+import "./styles/sora-ai.css";
+import "./styles/sora-theme.css";
+import "./styles/sora-topbar.css";
+
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
+import { api, asApiError, isMac, isTauri, onAnalysis, onLivePlay, thumbUrl } from "./lib/api";
+import { playMods } from "./lib/live";
+import { adoptLang, t, tn } from "./lib/i18n";
+import { esc, num, pct } from "./lib/format";
+import { current, go, goSection, initRouterInput, router, sectionRoot, type Route } from "./lib/router";
+import { describeScan, isScanning, runScan } from "./lib/scan";
+import { clearSkins, loadSkinList } from "./lib/skin/skins";
+import { events, loadPrefs, refreshStatus, reloadLibrary, setPrefs, setSnapshot, store } from "./lib/store";
+import type { ScanProgress } from "./lib/types";
+import { startConsent } from "./lib/consent";
+import { newSinceLastRun } from "./lib/changelog";
+import { openChangelog } from "./views/changelog";
+import { getVersion } from "@tauri-apps/api/app";
+import { mountPlayerBar } from "./player";
+import { closeFullscreen, finaleLeft, fullscreenOpen, openFullscreen } from "./views/fullscreen";
+import { follow } from "./lib/tosu-follow";
+import { STATE, type TosuNow } from "./lib/tosu";
+import { pickPpMods } from "./views/pp";
+import { heart } from "./lib/heart";
+import { presence } from "./lib/discord";
+import { launchHtml, renderLaunch } from "./ui/osu-launch";
+import { BrowseView } from "./views/browse";
+import { ScoreView } from "./views/score";
+import { TriesView } from "./views/tries";
+import type { Attempt } from "./lib/attempts";
+import { CareView } from "./views/care";
+import { RouletteView } from "./views/roulette";
+import { SkinsView } from "./views/skins";
+import { SoraAiView } from "./views/sora-ai";
+import { initOverlay, startOverlay } from "./views/overlay";
+import { initObsFeed } from "./views/obs-feed";
+import { initObsControl } from "./views/obs-control";
+import { initMatches } from "./lib/matches";
+import { initPools } from "./lib/pools";
+import { importProgressText, isImporting, openImport } from "./views/import";
+import { readLinks } from "./lib/links";
+import { closeMenus, initControls, toast } from "./ui/controls";
+import { icon, injectIconSprite } from "./ui/icons";
+import { mountMascot } from "./ui/mascot";
+import { playClickSfx, playNavSfx } from "./lib/anime-sfx";
+import { applyAppearance } from "./ui/theme";
+import {
+  addToCollection, collectionEvents, collectionMaps, DRAG_TYPE, fumenCollection, fumenCollections, initCollections, isSmart, smartFilter,
+} from "./lib/collections";
+import { initGoals } from "./lib/goals-store";
+import { collectionMenu, newCollection } from "./views/actions";
+import { initHistory, mapIndexOf, syncIfStale } from "./lib/history";
+import { initCloudScores } from "./lib/cloud-scores";
+import { downloadText, initUpdater, installUpdate, updateEvents, type UpdateState } from "./lib/updater";
+import { HistoryView } from "./views/history";
+import { HomeView } from "./views/home";
+import { LibraryView } from "./views/library";
+import { SetView } from "./views/set";
+import { SettingsView } from "./views/settings";
+import { softArtByHand } from "./ui/soft-art";
+import { WelcomeView } from "./views/welcome";
+
+interface View {
+  el: HTMLElement;
+  destroy(): void;
+  shown?(): void;
+}
+
+const app = document.getElementById("app")!;
+app.className = "app";
+document.documentElement.classList.toggle("mac", isMac);
+// WebKitGTK: no live blurs (soft-art.ts, the :root.linux rules)
+document.documentElement.classList.toggle("linux", softArtByHand);
+app.innerHTML = `
+  <header class="sora-topbar" data-tauri-drag-region>
+    <div class="sora-top-left" data-tauri-drag-region>
+      <div class="sora-brand" data-nav="home" data-tauri-drag-region>
+        <img src="/sora_logo.png" alt="Sora" />
+        <span class="sora-brand-name">Sora</span>
+        <span class="sora-brand-ver">v2.0</span>
+      </div>
+      <button class="icon-btn side-refresh" type="button" aria-label="${t("Update library")}" data-tip="${t("Update library")}">${icon("refresh")}</button>
+    </div>
+
+    <nav class="sora-top-nav nav" aria-label="Навигация Sora">
+      <button class="sora-nav-pill nav-item" type="button" data-nav="home">${icon("home")}<span class="sora-nav-text">${t("Home")}</span></button>
+      <button class="sora-nav-pill nav-item" type="button" data-nav="roulette">${icon("shuffle")}<span class="sora-nav-text">${t("Roulette")}</span></button>
+      <button class="sora-nav-pill nav-item" type="button" data-nav="library">${icon("library")}<span class="sora-nav-text">${t("Library")}</span></button>
+      <button class="sora-nav-pill nav-item" type="button" data-nav="skins">${icon("droplet")}<span class="sora-nav-text">${t("Skins")}</span></button>
+      <button class="sora-nav-pill nav-item" type="button" data-nav="history">${icon("clock")}<span class="sora-nav-text">${t("History")}</span></button>
+      <button class="sora-nav-pill nav-item" type="button" data-nav="browse">${icon("compass")}<span class="sora-nav-text">${t("Browse")}</span></button>
+      <button class="sora-nav-pill" type="button" id="btnTopCollections">${icon("collection")}<span class="sora-nav-text">${t("Collections")}</span></button>
+      <button class="sora-nav-pill nav-item" type="button" data-nav="care">${icon("drive")}<span class="sora-nav-text">${t("Library care")}</span></button>
+      <button class="sora-nav-pill nav-item" type="button" data-act="import">${icon("download")}<span class="sora-nav-text">${t("Add beatmaps")}</span></button>
+      <button class="sora-nav-pill nav-item" type="button" data-nav="sora-ai">${icon("star")}<span class="sora-nav-text">Sora AI</span></button>
+    </nav>
+
+    <div class="sora-top-right">
+      <div class="sora-top-search side-search">
+        ${icon("search", "search-ic")}
+        <input type="text" spellcheck="false" autocomplete="off" placeholder="${t("Search…")}" aria-label="${t("Search the library")}" />
+        <button class="icon-btn sm search-clear" type="button" data-tip="${t("Clear")}" aria-label="${t("Clear search")}" hidden>${icon("x")}</button>
+        <button class="nav-item side-search-btn" type="button" hidden></button>
+      </div>
+      <div class="sora-top-play">${launchHtml()}</div>
+      <button class="side-update" type="button" hidden>
+        <span class="side-update-bar"></span>
+        ${icon("download", "side-update-ic")}
+        <span class="side-update-text"><span class="side-update-title"></span><span class="side-update-sub"></span></span>
+      </button>
+      <div class="sora-top-profile profile">
+        <div class="avatar"><span class="avatar-initial"></span><img alt="" hidden /></div>
+        <div class="profile-text"><div class="profile-name"></div><div class="profile-sub num" hidden></div></div>
+        <button class="icon-btn sm profile-settings" type="button" data-nav="settings" data-tip="${t("Settings")}" aria-label="${t("Settings")}">${icon("settings")}</button>
+      </div>
+      ${isMac ? "" : `<div class="win-controls">
+        <button class="win-btn" id="win-min" type="button" aria-label="${t("Minimise")}">${icon("win-min")}</button>
+        <button class="win-btn" id="win-max" type="button" aria-label="${t("Maximise")}">${icon("win-max", "ic-max")}${icon("win-restore", "ic-restore")}</button>
+        <button class="win-btn win-close" id="win-close" type="button" aria-label="${t("Close")}">${icon("win-close")}</button>
+      </div>`}
+    </div>
+  </header>
+
+  <section class="side-box sora-col-pop" data-group="collections" hidden style="display:none;">
+    <div class="side-box-bar">
+      <button class="side-box-head" type="button" aria-expanded="true">
+        ${icon("collection", "side-box-ic")}<span class="side-box-label">${t("Collections")}</span>
+      </button>
+      <button class="icon-btn sm side-box-add" type="button" data-tip="${t("New collection")}" aria-label="${t("New collection")}">${icon("plus")}</button>
+    </div>
+    <div class="side-list"></div>
+  </section>
+
+  <button class="icon-btn side-toggle" type="button" hidden></button>
+  <div class="main">
+    <main class="content"></main>
+    <footer class="player-bar"></footer>
+  </div>`;
+
+const $ = <T extends Element>(sel: string) => app.querySelector<T>(sel)!;
+
+// Sora floating anime particles + interactive mascot + subtle UI SFX
+const particles = document.createElement("div");
+particles.className = "sora-particles";
+particles.innerHTML = Array.from({ length: 14 }, (_, i) => {
+  const left = ((i * 73) % 96) + 2;
+  const delay = ((i * 1.7) % 12).toFixed(1);
+  const dur = (11 + (i % 6) * 2).toFixed(1);
+  return `<span class="sora-particle" style="left:${left}%;animation-delay:-${delay}s;animation-duration:${dur}s;"></span>`;
+}).join("");
+document.body.prepend(particles);
+mountMascot();
+document.addEventListener("click", (e) => {
+  const el = e.target as HTMLElement;
+  if (el.closest(".sora-mascot-btn")) return;
+  if (el.closest(".nav-item")) playNavSfx();
+  else if (el.closest("button, .btn")) playClickSfx();
+});
+
+// ── Update button (sidebar) ──────────────────────────────────────────────
+const sideUpdate = $<HTMLButtonElement>(".side-update");
+function renderSideUpdate(s: UpdateState): void {
+  const show = s.phase === "available" || s.phase === "downloading" || s.phase === "installing" || (s.phase === "error" && !!s.version);
+  sideUpdate.hidden = !show;
+  if (!show) return;
+  const version = ("version" in s ? s.version : "") ?? "";
+  const [title, sub] =
+    s.phase === "downloading"
+      ? [t("Downloading {version}", { version }), downloadText(s)]
+      : s.phase === "installing"
+        ? [t("Installing {version}", { version }), t("Sora restarts")]
+        : s.phase === "error"
+          ? [t("Update to {version}", { version }), t("Didn't work, try again")]
+          : [t("Update to {version}", { version }), t("Restarts Sora")];
+  sideUpdate.querySelector(".side-update-title")!.textContent = title;
+  sideUpdate.querySelector(".side-update-sub")!.textContent = sub;
+  sideUpdate.disabled = s.phase === "downloading" || s.phase === "installing";
+  sideUpdate.classList.toggle("is-error", s.phase === "error");
+  sideUpdate.dataset.tip = s.phase === "error" ? s.message : `${title} · ${sub}`;
+  const p = s.phase === "downloading" && s.total ? s.done / s.total : s.phase === "installing" ? 1 : 0;
+  sideUpdate.style.setProperty("--p", String(p));
+}
+updateEvents.on("change", renderSideUpdate);
+sideUpdate.addEventListener("click", () => void installUpdate());
+const content = $<HTMLElement>(".content");
+const sideList = $<HTMLElement>(".side-list");
+const sideBox = $<HTMLElement>(".side-box");
+const searchInput = $<HTMLInputElement>(".side-search input");
+const searchClear = $<HTMLButtonElement>(".side-search .search-clear");
+const refreshBtn = $<HTMLButtonElement>(".side-refresh");
+
+let home: HomeView | null = null;
+let library: LibraryView | null = null;
+let rouletteView: RouletteView | null = null;
+let skinsView: SkinsView | null = null;
+let soraAiView: SoraAiView | null = null;
+let history: HistoryView | null = null;
+let browseView: BrowseView | null = null;
+let careView: CareView | null = null;
+const collectionViews = new Map<string, LibraryView>();
+let active: View | null = null;
+
+// ── routing ────────────────────────────────────────────────────────────────
+
+function ensureHome(): HomeView {
+  if (!home) {
+    home = new HomeView();
+    home.el.hidden = true;
+    content.appendChild(home.el);
+  }
+  return home;
+}
+
+function ensureLibrary(): LibraryView {
+  if (!library) {
+    library = new LibraryView({
+      title: t("Library"),
+      persistent: true,
+      emptyHint: t("Import your osu!lazer library from Settings."),
+      onQuery: (q) => syncSearchFrom(library, q),
+      onSmartSaved: (id) => goSection({ name: "collection", id }),
+    });
+    library.el.hidden = true;
+    content.appendChild(library.el);
+  }
+  return library;
+}
+
+function ensureHistory(): HistoryView {
+  if (!history) {
+    history = new HistoryView();
+    history.el.hidden = true;
+    content.appendChild(history.el);
+  }
+  return history;
+}
+
+function ensureCare(): CareView {
+  if (!careView) {
+    careView = new CareView();
+    careView.el.hidden = true;
+    content.appendChild(careView.el);
+  }
+  return careView;
+}
+
+function ensureBrowse(): BrowseView {
+  if (!browseView) {
+    browseView = new BrowseView();
+    browseView.el.hidden = true;
+    content.appendChild(browseView.el);
+  }
+  return browseView;
+}
+
+function ensureRoulette(): RouletteView {
+  if (!rouletteView) {
+    rouletteView = new RouletteView();
+    rouletteView.el.hidden = true;
+    content.appendChild(rouletteView.el);
+  }
+  return rouletteView;
+}
+
+function ensureSkins(): SkinsView {
+  if (!skinsView) {
+    skinsView = new SkinsView();
+    skinsView.el.hidden = true;
+    content.appendChild(skinsView.el);
+  }
+  return skinsView;
+}
+
+function ensureSoraAi(): SoraAiView {
+  if (!soraAiView) {
+    soraAiView = new SoraAiView();
+    soraAiView.el.hidden = true;
+    content.appendChild(soraAiView.el);
+  }
+  return soraAiView;
+}
+
+function collectionView(id: string): LibraryView | null {
+  const mine = fumenCollection(id);
+  if (mine) return fumenCollectionView(id);
+  const col = store.snap?.collections.find((c) => c.id === id);
+  if (!col) return null;
+  let v = collectionViews.get(id);
+  if (!v) {
+    const view: LibraryView = new LibraryView({
+      title: col.name,
+      restrict: () => {
+        const c = store.snap?.collections.find((x) => x.id === id);
+        return new Set(c?.maps ?? []);
+      },
+      subtitle: () => {
+        const c = store.snap?.collections.find((x) => x.id === id);
+        return c?.missing ? t("{n} not in your library", { n: num(c.missing) }) : "";
+      },
+      emptyHint: t("Add maps to this collection in osu!lazer."),
+      onQuery: (q) => syncSearchFrom(view, q),
+      menu: (at) => collectionMenu(at, id, { copied: (copy) => goSection({ name: "collection", id: copy }) }),
+    });
+    v = view;
+    v.el.hidden = true;
+    content.appendChild(v.el);
+    collectionViews.set(id, v);
+  }
+  return v;
+}
+
+/** One of Sora's collections: like lazer's, plus taking maps out, renaming and deleting. */
+function fumenCollectionView(id: string): LibraryView {
+  let v = collectionViews.get(id);
+  if (!v) {
+    const view: LibraryView = new LibraryView({
+      title: () => fumenCollection(id)?.name ?? t("Collection"),
+      restrict: () => {
+        const c = fumenCollection(id);
+        return c ? collectionMaps(c) : new Set();
+      },
+      subtitle: () => {
+        const c = fumenCollection(id);
+        return c?.missing ? t("{n} not in your library", { n: num(c.missing) }) : "";
+      },
+      emptyHint: isSmart(fumenCollection(id))
+        ? t("Nothing in your library matches this search right now.")
+        : t("Drag sets here from the library, or right-click a beatmap › Add to collection."),
+      onQuery: (q) => syncSearchFrom(view, q),
+      menu: (at) => collectionMenu(at, id, { deleted: () => goSection({ name: "library" }), editSearch }),
+      collection: id,
+    });
+    v = view;
+    v.el.hidden = true;
+    content.appendChild(v.el);
+    collectionViews.set(id, v);
+  }
+  return v;
+}
+
+/** A smart collection's search, into the library's filters to change it. */
+function editSearch(id: string): void {
+  const c = fumenCollection(id);
+  if (!c) return;
+  goSection({ name: "library" });
+  ensureLibrary().editSmart(id, c.name, smartFilter(c));
+}
+
+collectionEvents.on("collections", () => {
+  // pages of collections that are gone go; the others show what changed
+  for (const [id, v] of collectionViews) {
+    const lazer = store.snap?.collections.some((c) => c.id === id);
+    if (fumenCollection(id)) v.refresh();
+    else if (!lazer) {
+      if (active === v) goSection({ name: "library" });
+      v.destroy();
+      collectionViews.delete(id);
+    }
+  }
+  renderCollections();
+});
+
+function show(route: Route): void {
+  closeMenus(true);
+  // persistent views just hide; ephemeral ones are destroyed
+  const persistent = new Set<View>([...(home ? [home] : []), ...(library ? [library] : []), ...(rouletteView ? [rouletteView] : []), ...(skinsView ? [skinsView] : []), ...(soraAiView ? [soraAiView] : []), ...(history ? [history] : []), ...(browseView ? [browseView] : []), ...(careView ? [careView] : []), ...collectionViews.values()]);
+  if (active && !persistent.has(active)) active.destroy();
+  for (const v of persistent) v.el.hidden = true;
+
+  let view: View;
+  switch (route.name) {
+    case "home":
+      if (store.snap) view = ensureHome();
+      else {
+        view = new WelcomeView();
+        content.appendChild(view.el);
+      }
+      break;
+    case "library":
+      view = ensureLibrary();
+      break;
+    case "roulette":
+      view = ensureRoulette();
+      break;
+    case "skins":
+      view = ensureSkins();
+      break;
+    case "sora-ai":
+      view = ensureSoraAi();
+      break;
+    case "history":
+      view = ensureHistory();
+      break;
+    case "browse":
+      view = ensureBrowse();
+      break;
+    case "care":
+      view = ensureCare();
+      break;
+    case "collection":
+      view = collectionView(route.id) ?? ensureLibrary();
+      break;
+    case "set":
+      view = new SetView(route.id, route.map, route.similar);
+      content.appendChild(view.el);
+      break;
+    case "score":
+      view = new ScoreView(route.id);
+      content.appendChild(view.el);
+      break;
+    case "tries":
+      view = new TriesView(route.md5, route.at);
+      content.appendChild(view.el);
+      break;
+    case "settings":
+      view = new SettingsView(route.section);
+      content.appendChild(view.el);
+      break;
+    case "welcome":
+      view = new WelcomeView();
+      content.appendChild(view.el);
+      break;
+  }
+  active = view;
+  view.el.hidden = false;
+  view.el.classList.remove("view-enter");
+  void view.el.offsetWidth;
+  view.el.classList.add("view-enter");
+  view.shown?.();
+  document.body.dataset.view = route.name;
+  syncNav(route);
+  syncSearchToRoute(route);
+  window.scrollTo(0, 0);
+  document.documentElement.scrollTop = 0;
+  document.body.scrollTop = 0;
+  app.scrollTop = 0;
+  content.scrollTop = 0;
+}
+
+router.on("change", show);
+
+function syncNav(route: Route): void {
+  // a set page belongs to the section it was opened from
+  const r = route.name === "set" ? sectionRoot() : route;
+  const section = r.name === "welcome" ? "home" : r.name;
+  app.querySelectorAll<HTMLElement>("[data-nav]").forEach((b) => b.classList.toggle("active", b.dataset.nav === section));
+  sideList.querySelectorAll<HTMLElement>(".side-item").forEach((b) => {
+    b.classList.toggle("active", r.name === "collection" && b.dataset.id === r.id);
+  });
+}
+
+function renderCollections(): void {
+  const snap = store.snap;
+  const lazer = (snap?.collections ?? []).filter((c) => !c.from);
+  const stable = (snap?.collections ?? []).filter((c) => c.from === "stable");
+  const mine = snap ? fumenCollections() : [];
+  sideBox.hidden = !snap;
+  const item = (id: string, name: string, maps: number[], fumen: boolean, smart = false) => {
+    // cover: the first difficulty in the collection that has a background
+    const mi = maps.find((i) => snap!.maps[i].bg ?? snap!.sets[snap!.maps[i].set].bg);
+    const bg = mi !== undefined ? (snap!.maps[mi].bg ?? snap!.sets[snap!.maps[mi].set].bg) : undefined;
+    return `<button class="side-item reveal" type="button" data-id="${esc(id)}"${fumen && !smart ? " data-fumen" : ""}${smart ? " data-smart" : ""}>
+      <span class="side-cover${bg ? "" : " img-missing"}">${bg ? `<img src="${thumbUrl(bg, 160)}" alt="" loading="lazy" decoding="async" />` : icon("collection")}</span>
+      <span class="side-label">${esc(name)}</span>${smart ? icon("sliders", "side-smart") : ""}<span class="side-count num">${num(maps.length)}</span>
+    </button>`;
+  };
+  sideList.innerHTML = [
+    ...mine.map((c) => item(c.id, c.name, [...collectionMaps(c)], true, isSmart(c))),
+    !mine.length ? `<div class="side-empty">${t("Make one with + or drag a set here.")}</div>` : "",
+    lazer.length ? `<div class="side-sub">${t("In osu!lazer")}</div>` : "",
+    ...lazer.map((c) => item(c.id, c.name, c.maps, false)),
+    stable.length ? `<div class="side-sub">${t("In osu!stable")}</div>` : "",
+    ...stable.map((c) => item(c.id, c.name, c.maps, false)),
+  ].join("");
+  syncNav(current());
+  applySidebar();
+}
+
+// right-clicks Sora has no menu for get none either (not the webview's Back / Refresh / Print);
+// text fields keep theirs for copy and paste, and the dev build keeps it for Inspect
+if (!import.meta.env.DEV) {
+  window.addEventListener("contextmenu", (e) => {
+    if (e.defaultPrevented) return;
+    const t = e.target as HTMLElement;
+    if (t.closest?.("input, textarea, [contenteditable='true']")) return;
+    e.preventDefault();
+  });
+}
+
+$(".side-box-add").addEventListener("click", () => void newCollection().then((id) => id && goSection({ name: "collection", id })));
+sideList.addEventListener("contextmenu", (e) => {
+  const b = (e.target as Element).closest<HTMLElement>(".side-item");
+  if (!b) return;
+  e.preventDefault();
+  collectionMenu({ x: e.clientX, y: e.clientY }, b.dataset.id!, {
+    deleted: () => {},
+    copied: (copy) => goSection({ name: "collection", id: copy }),
+    editSearch,
+  });
+});
+
+// drops from the library: onto one of Sora's collections, or the box's + for a new one
+const dragIds = (e: DragEvent): string[] | null => {
+  try {
+    return JSON.parse(e.dataTransfer?.getData(DRAG_TYPE) || "null");
+  } catch {
+    return null;
+  }
+};
+const dropTarget = (e: DragEvent) => (e.target as Element).closest<HTMLElement>(".side-item[data-fumen], .side-box-add");
+sideBox.addEventListener("dragover", (e) => {
+  if (!e.dataTransfer?.types.includes(DRAG_TYPE)) return;
+  const t = dropTarget(e);
+  sideBox.querySelectorAll(".drop-over").forEach((x) => x !== t && x.classList.remove("drop-over"));
+  if (!t) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = "copy";
+  t.classList.add("drop-over");
+});
+sideBox.addEventListener("dragleave", (e) => {
+  const t = dropTarget(e);
+  if (t && !t.contains(e.relatedTarget as Node)) t.classList.remove("drop-over");
+});
+sideBox.addEventListener("drop", (e) => {
+  const t = dropTarget(e);
+  sideBox.querySelectorAll(".drop-over").forEach((x) => x.classList.remove("drop-over"));
+  const ids = dragIds(e);
+  if (!t || !ids?.length) return;
+  e.preventDefault();
+  const idx = ids.map((id) => mapIndexOf(id)).filter((i): i is number => i !== undefined);
+  if (t.classList.contains("side-box-add")) void newCollection(idx);
+  else void addToCollection(t.dataset.id!, idx);
+});
+
+app.querySelector(".nav")!.addEventListener("click", (e) => {
+  if ((e.target as Element).closest("[data-act=\"import\"]")) return openImport();
+  const b = (e.target as Element).closest<HTMLElement>("[data-nav]");
+  if (!b) return;
+  if (!store.snap) return goSection({ name: "welcome" });
+  goSection({ name: b.dataset.nav as "home" | "roulette" | "library" | "skins" | "sora-ai" | "history" | "browse" | "care" });
+});
+
+// Toggle Collections dropdown popover in Top Navbar
+const colPop = $<HTMLElement>(".sora-col-pop");
+app.querySelector("#btnTopCollections")?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  const open = colPop.style.display === "none";
+  colPop.hidden = !open;
+  colPop.style.display = open ? "flex" : "none";
+});
+document.addEventListener("click", (e) => {
+  if (colPop.style.display !== "none" && !(e.target as Element).closest(".sora-col-pop, #btnTopCollections")) {
+    colPop.style.display = "none";
+  }
+});
+$(".profile-settings").addEventListener("click", () => goSection({ name: "settings" }));
+sideList.addEventListener("click", (e) => {
+  const b = (e.target as Element).closest<HTMLElement>(".side-item");
+  if (b) goSection({ name: "collection", id: b.dataset.id! });
+});
+sideList.addEventListener("error", (e) => {
+  const img = e.target as HTMLElement;
+  if (img.tagName === "IMG") {
+    img.parentElement?.classList.add("img-missing");
+    img.remove();
+  }
+}, true);
+
+// collapsible groups
+function applyGroups(): void {
+  app.querySelectorAll<HTMLElement>(".side-box[data-group]").forEach((box) => {
+    const closed = store.prefs.collapsedGroups.includes(box.dataset.group!);
+    box.classList.toggle("closed", closed);
+    box.querySelector(".side-box-head")!.setAttribute("aria-expanded", String(!closed));
+  });
+}
+app.querySelectorAll<HTMLElement>(".side-box-head").forEach((head) =>
+  head.addEventListener("click", () => {
+    const group = head.closest<HTMLElement>(".side-box")!.dataset.group!;
+    const set = new Set(store.prefs.collapsedGroups);
+    if (set.has(group)) set.delete(group);
+    else set.add(group);
+    setPrefs({ collapsedGroups: [...set] });
+    applyGroups();
+  }),
+);
+
+// ── sidebar collapse ───────────────────────────────────────────────────────
+
+function applySidebar(): void {
+  const collapsed = store.prefs.sidebarCollapsed;
+  document.body.classList.toggle("sidebar-collapsed", collapsed);
+  const btn = $<HTMLElement>(".side-toggle");
+  btn.dataset.tip = collapsed ? t("Expand sidebar") : t("Collapse sidebar");
+  btn.setAttribute("aria-label", btn.dataset.tip);
+  app.querySelectorAll<HTMLElement>(".sidebar .nav-item[data-nav], .sidebar .nav-item[data-act], .sidebar .side-item").forEach((el) => {
+    const label = el.querySelector(".nav-label, .side-label")?.textContent ?? "";
+    if (collapsed) el.dataset.tip = label;
+    else delete el.dataset.tip;
+  });
+  renderLaunch(app);
+}
+function setSidebarCollapsed(collapsed: boolean): void {
+  if (collapsed === store.prefs.sidebarCollapsed) return;
+  setPrefs({ sidebarCollapsed: collapsed });
+  applySidebar();
+}
+$(".side-toggle").addEventListener("click", () => setSidebarCollapsed(!store.prefs.sidebarCollapsed));
+
+// ── search (lives in the sidebar, drives the library / collection on screen) ──
+
+function searchTarget(): LibraryView | null {
+  const r = current();
+  if (r.name === "collection") return collectionViews.get(r.id) ?? null;
+  if (r.name === "library") return library;
+  return null;
+}
+
+function setSearchValue(q: string): void {
+  if (searchInput.value !== q) searchInput.value = q;
+  searchClear.hidden = !q;
+  document.body.classList.toggle("searching", !!q);
+}
+
+/** A view changed its own query (reset button, "more by this mapper"). */
+function syncSearchFrom(view: LibraryView | null, q: string): void {
+  if (view && view === searchTarget()) setSearchValue(q);
+}
+
+function syncSearchToRoute(route: Route): void {
+  const view = route.name === "collection" ? collectionViews.get(route.id) : library;
+  setSearchValue(view?.query ?? "");
+}
+
+let searchTimer = 0;
+function applySearch(): void {
+  const view = searchTarget();
+  const q = searchInput.value;
+  if (view) return view.setQuery(q);
+  if (!q.trim() || !store.snap) return;
+  // query first, then navigate: the route sync then finds the same text and leaves the caret alone
+  ensureLibrary().setQuery(q);
+  goSection({ name: "library" });
+}
+searchInput.addEventListener("input", () => {
+  searchClear.hidden = !searchInput.value;
+  document.body.classList.toggle("searching", !!searchInput.value);
+  if (searchInput.value) hideHints();
+  else showHints();
+  clearTimeout(searchTimer);
+  searchTimer = window.setTimeout(applySearch, 70);
+});
+searchClear.addEventListener("click", () => {
+  searchInput.value = "";
+  applySearch();
+  setSearchValue("");
+  searchInput.focus();
+});
+
+function focusSearch(): void {
+  setSidebarCollapsed(false);
+  searchInput.focus();
+  searchInput.select();
+}
+$(".side-search-btn").addEventListener("click", focusSearch);
+
+// filter syntax hints under the search field while it's empty
+const HINTS: { token: string; label: string }[] = [
+  { token: "keys=7", label: t("Mania key count") },
+  { token: "sr>5", label: t("Star rating") },
+  { token: "status=ranked", label: t("ranked, loved, local…") },
+  { token: "bpm>=180", label: t("Tempo") },
+  { token: "length<2:00", label: t("Length") },
+  { token: "pattern=jumpstream", label: t("stream, chordjack, ln, stamina…") },
+  { token: "peak>15", label: t("Densest notes per second") },
+  { token: "played=no", label: t("Never played") },
+  { token: "grade>=a", label: t("Your best grade") },
+  { token: "creator=", label: t("Mapper") },
+  { token: "-word", label: t("Leave out a word") },
+];
+let hintsEl: HTMLElement | null = null;
+let hintIdx = -1;
+
+function showHints(): void {
+  if (hintsEl || searchInput.value || document.activeElement !== searchInput || !store.snap) return;
+  const el = document.createElement("div");
+  el.className = "menu search-hints";
+  el.setAttribute("role", "listbox");
+  el.innerHTML = `<div class="menu-group">${t("Filter like this")}</div>${HINTS.map(
+    (h, i) => `<div class="menu-item mi" role="option" data-i="${i}" style="--k:${i}"><span class="menu-label hint-token">${esc(h.token)}</span><span class="menu-hint">${esc(h.label)}</span></div>`,
+  ).join("")}`;
+  const r = searchInput.closest(".search")!.getBoundingClientRect();
+  el.style.left = `${Math.round(r.left)}px`;
+  el.style.top = `${Math.round(r.bottom + 6)}px`;
+  el.style.width = `${Math.max(280, Math.round(r.width))}px`;
+  el.addEventListener("pointerdown", (e) => e.preventDefault()); // keep focus in the input
+  el.addEventListener("click", (e) => {
+    const it = (e.target as Element).closest<HTMLElement>("[data-i]");
+    if (it) insertHint(+it.dataset.i!);
+  });
+  el.addEventListener("pointermove", (e) => {
+    const it = (e.target as Element).closest<HTMLElement>("[data-i]");
+    if (it) highlightHint(+it.dataset.i!);
+  });
+  document.body.appendChild(el);
+  hintsEl = el;
+  hintIdx = -1;
+}
+
+function hideHints(): void {
+  const el = hintsEl;
+  if (!el) return;
+  hintsEl = null;
+  el.classList.add("closing");
+  setTimeout(() => el.remove(), 150);
+}
+
+function highlightHint(i: number): void {
+  hintIdx = i;
+  hintsEl?.querySelectorAll<HTMLElement>("[data-i]").forEach((n) => n.classList.toggle("hl", +n.dataset.i! === i));
+}
+
+function insertHint(i: number): void {
+  const { token } = HINTS[i];
+  searchInput.value = token;
+  // select the example value so typing replaces it
+  const m = /^(-|[a-z]+(?:>=|<=|==|!=|=|<|>))(.*)$/.exec(token);
+  const from = m ? m[1].length : token.length;
+  searchInput.focus();
+  searchInput.setSelectionRange(from, token.length);
+  hideHints();
+  searchClear.hidden = false;
+  document.body.classList.add("searching");
+  clearTimeout(searchTimer);
+  searchTimer = window.setTimeout(applySearch, 70);
+}
+
+searchInput.addEventListener("focus", showHints);
+searchInput.addEventListener("blur", hideHints);
+searchInput.addEventListener("keydown", (e) => {
+  if (hintsEl && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+    e.preventDefault();
+    const n = HINTS.length;
+    highlightHint(hintIdx < 0 ? (e.key === "ArrowDown" ? 0 : n - 1) : (hintIdx + (e.key === "ArrowDown" ? 1 : -1) + n) % n);
+  } else if (hintsEl && e.key === "Enter" && hintIdx >= 0) {
+    e.preventDefault();
+    insertHint(hintIdx);
+  } else if (e.key === "Escape") {
+    e.stopPropagation();
+    if (hintsEl) hideHints();
+    else if (searchInput.value) {
+      searchInput.value = "";
+      applySearch();
+      setSearchValue("");
+    } else searchInput.blur();
+  } else if (e.key === "Enter") {
+    clearTimeout(searchTimer);
+    applySearch();
+  }
+});
+
+// ── profile + library state ────────────────────────────────────────────────
+
+function renderProfile(): void {
+  const snap = store.snap;
+  const user = snap?.user;
+  const name = user?.name ?? (snap ? t("osu! player") : "Sora");
+  $(".profile-name").textContent = name;
+  $(".avatar-initial").textContent = name.slice(0, 1).toUpperCase();
+  const img = $<HTMLImageElement>(".avatar img");
+  if (user?.id && img.dataset.id !== String(user.id)) {
+    img.dataset.id = String(user.id);
+    img.hidden = true;
+    img.onload = () => (img.hidden = false);
+    img.onerror = () => (img.hidden = true);
+    img.src = `https://a.ppy.sh/${user.id}`;
+  } else if (!user?.id) {
+    img.hidden = true;
+    img.removeAttribute("src");
+    delete img.dataset.id;
+  }
+  renderLibraryState();
+}
+
+/** background chart analysis (runs after imports; feeds pattern search) */
+let analysis: ScanProgress | null = null;
+
+function renderLibraryState(): void {
+  const sub = $<HTMLElement>(".profile-sub");
+  const p = store.scan;
+  const importing = importProgressText();
+  sub.classList.toggle("is-link", !!importing);
+  if (importing) {
+    sub.textContent = t("Adding beatmaps · {progress}", { progress: importing });
+    sub.dataset.tip = t("Downloading and importing into osu!lazer · click to show");
+  } else if (p) {
+    const { label, fraction } = describeScan(p);
+    sub.textContent = t("Updating · {pct}%", { pct: Math.round(fraction * 100) });
+    sub.dataset.tip = label;
+  } else if (analysis && analysis.done < analysis.total) {
+    sub.textContent = t("Analysing charts · {pct}%", { pct: Math.round((analysis.done / Math.max(1, analysis.total)) * 100) });
+    sub.dataset.tip = t("Reading every difficulty once, for pattern search");
+  } else {
+    const sets = store.snap?.sets.filter((s) => s.maps.length).length ?? 0;
+    sub.textContent = store.snap ? tn(sets, "{n} beatmap set", "{n} beatmap sets") : t("No library yet");
+    delete sub.dataset.tip;
+  }
+  const busy = isScanning() || isImporting();
+  refreshBtn.disabled = busy || !(store.status?.install || store.status?.stable?.install);
+  refreshBtn.classList.toggle("busy", busy);
+  refreshBtn.dataset.tip = busy ? t("Updating library…") : t("Update library");
+}
+
+refreshBtn.addEventListener("click", async () => {
+  const res = await runScan();
+  if (!res.ok) toast(t("Couldn't update the library: {error}", { error: res.error.message }), { kind: "danger", timeout: 6000 });
+  else toast(t("Library updated"), { kind: "success", timeout: 2200 });
+});
+events.on("scan", renderLibraryState);
+events.on("status", renderLibraryState);
+events.on("status", () => renderLaunch(app));
+events.on("importing", renderLibraryState);
+// the import's window, minimized to the sidebar, comes back from there
+$(".profile-sub").addEventListener("click", () => {
+  if (isImporting()) openImport();
+});
+
+// ── window ─────────────────────────────────────────────────────────────────
+
+async function initWindow(): Promise<void> {
+  if (!isTauri) return;
+  const win = getCurrentWindow();
+  // macOS keeps its own buttons (the title bar is see-through, see tauri.macos.conf.json)
+  if (!isMac) {
+    $("#win-min").addEventListener("click", () => void win.minimize());
+    $("#win-max").addEventListener("click", () => void win.toggleMaximize());
+    $("#win-close").addEventListener("click", () => void win.close());
+    const sync = async () => {
+      const max = await win.isMaximized().catch(() => false);
+      document.body.classList.toggle("win-maximized", max);
+      $<HTMLElement>("#win-max").dataset.tip = max ? t("Restore") : t("Maximise");
+    };
+    await win.onResized(() => void sync());
+    void sync();
+  }
+  // lazer may change while Sora is open: check when the window regains focus
+  let lastCheck = 0;
+  await win.onFocusChanged(({ payload: focused }) => {
+    if (!focused || Date.now() - lastCheck < 30_000) return;
+    lastCheck = Date.now();
+    void maybeAutoRescan();
+  });
+}
+
+// ── keyboard ───────────────────────────────────────────────────────────────
+
+window.addEventListener("keydown", (e) => {
+  const typing = (e.target as HTMLElement).closest("input, textarea, [contenteditable]");
+  if (((isMac ? e.metaKey : e.ctrlKey) && e.key.toLowerCase() === "f") || (e.key === "/" && !typing)) {
+    if (!store.snap) return;
+    e.preventDefault();
+    focusSearch();
+  }
+});
+
+// osu! links pasted anywhere outside a text field: add them
+window.addEventListener("paste", (e) => {
+  if ((e.target as HTMLElement).closest("input, textarea, [contenteditable]")) return;
+  const text = e.clipboardData?.getData("text") ?? "";
+  if (!readLinks(text).links.length) return;
+  e.preventDefault();
+  openImport(text);
+});
+
+// search requests from anywhere (tags, "more by this mapper", the player menu)
+events.on("search", (q) => {
+  goSection({ name: "library" });
+  ensureLibrary().setQuery(q);
+});
+
+// ── data ───────────────────────────────────────────────────────────────────
+
+events.on("library", () => {
+  // a new import may have brought new skins; reading the list also extracts lazer's built-in ones
+  clearSkins();
+  void loadSkinList().catch(() => {});
+  renderCollections();
+  renderProfile();
+  // collections that vanished
+  for (const [id, v] of collectionViews) {
+    if (!store.snap?.collections.some((c) => c.id === id)) {
+      v.destroy();
+      collectionViews.delete(id);
+    }
+  }
+});
+
+/** First import only: pick a sensible default ruleset from what the player actually plays. */
+function applyFirstRunDefaults(): void {
+  if (store.prefs.defaultsApplied || !store.snap) return;
+  const plays = [0, 0, 0, 0];
+  for (const m of store.snap.maps) if (m.best && m.mode >= 0 && m.mode <= 3) plays[m.mode] += m.best.plays;
+  const total = plays.reduce((a, b) => a + b, 0);
+  const top = plays.indexOf(Math.max(...plays));
+  const patch: Parameters<typeof setPrefs>[0] = { defaultsApplied: true };
+  if (total >= 20 && plays[top] / total >= 0.6) patch.mode = top;
+  setPrefs(patch);
+}
+
+/** ms without new beatmaps in lazer before the library catches up with them */
+const MAPS_QUIET = 4000;
+
+async function maybeAutoRescan(): Promise<void> {
+  const st = await refreshStatus().catch(() => null);
+  // an import into lazer rescans by itself when it's done
+  if (!st?.changed || st.scanning || store.settings?.autoRescan === false || isImporting()) return;
+  const res = await runScan();
+  if (!res.ok) toast(t("Couldn't update the library: {error}", { error: res.error.message }), { kind: "danger", timeout: 6000 });
+}
+
+async function boot(): Promise<void> {
+  injectIconSprite();
+  initControls();
+  initRouterInput();
+  mountPlayerBar($(".player-bar"), { onFullscreen: () => openFullscreen() });
+  void initWindow();
+  if (isTauri) {
+    void onAnalysis(
+      (p) => {
+        analysis = p;
+        renderLibraryState();
+      },
+      () => {
+        analysis = null;
+        renderLibraryState();
+        if (store.snap) void reloadLibrary().catch((e) => console.warn("[analysis] reload failed", e));
+      },
+    );
+  }
+
+  try {
+    loadPrefs(await api.getSettings());
+  } catch (e) {
+    console.warn("[settings]", asApiError(e).message);
+  }
+  // the language in Sora's settings wins over the copy the window started with
+  if (adoptLang(store.prefs.lang)) return;
+  applyAppearance();
+  applySidebar();
+  applyGroups();
+  renderProfile();
+
+  let st: Awaited<ReturnType<typeof refreshStatus>> | undefined;
+  try {
+    st = await refreshStatus();
+  } catch (e) {
+    toast(asApiError(e).message, { kind: "danger" });
+  }
+  if (st?.scannedAt) {
+    setSnapshot(await api.getLibrary());
+    applyFirstRunDefaults(); // before the library view exists: it reads the default mode from prefs
+    show(current());
+    if (st.changed && store.settings?.autoRescan !== false) void maybeAutoRescan();
+  } else {
+    renderCollections();
+    goSection({ name: "welcome" });
+    const off = events.on("library", () => {
+      off();
+      applyFirstRunDefaults();
+    });
+  }
+  // the plays: kept current, and read from osu! when the last sync is old
+  initHistory();
+  void syncIfStale();
+  initCloudScores();
+  initUpdater();
+  initGoals();
+  initCollections();
+  initPools();
+  initMatches();
+  initOverlay();
+  initObsFeed();
+  if (store.prefs.obs?.serve) void startOverlay();
+  initObsControl();
+  initLivePlays();
+  initFollow();
+  initSongSelect();
+  heart.init();
+  presence.init();
+  document.body.classList.add("ready");
+  void startConsent()
+    .catch((e) => console.warn("[consent]", asApiError(e).message))
+    .finally(() => void showWhatsNew(!!st?.scannedAt));
+}
+
+/** After an update: what changed since the version Sora last ran (after the start ping's notice). */
+async function showWhatsNew(known: boolean): Promise<void> {
+  if (!isTauri) return;
+  const version = await getVersion().catch(() => null);
+  if (version) openChangelog(newSinceLastRun(version, known), true);
+}
+
+/** Plays as they happen: with Sora behind the game, its score page is waiting when you come back;
+ * in front, a toast offers it. The companion window comes up when it was on last time. */
+function initLivePlays(): void {
+  if (!isTauri) return;
+  void onLivePlay((p) => {
+    const show = () => go({ name: "score", id: p.id });
+    // playing along with osu!: a pass goes from the visualizer to its score (once a full combo has
+    // had its moment there)
+    if (follow.connected && p.md5 === follow.current) {
+      window.setTimeout(() => {
+        closeFullscreen();
+        followOpened = false;
+        show();
+      }, finaleLeft());
+      return;
+    }
+    if (store.prefs.scoreAuto && !document.hasFocus()) return show();
+    const what = [p.title ?? t("A play"), p.version ? `[${p.version}]` : "", playMods(p)].filter(Boolean).join(" ");
+    toast(t("{what}: {acc}", { what, acc: pct(p.accuracy) }), { timeout: 9000, action: { label: t("Show"), run: show } });
+  });
+  // lazer imported or saved a beatmap (through Sora or not): the library catches up once it's
+  // quiet; while an import or a scan runs, later (an import updates the library when it's done)
+  let mapsTimer = 0;
+  const lazerMaps = (): void => {
+    clearTimeout(mapsTimer);
+    mapsTimer = window.setTimeout(async () => {
+      const st = await refreshStatus().catch(() => null);
+      if (isImporting() || isScanning() || st?.scanning) return lazerMaps();
+      void maybeAutoRescan();
+    }, MAPS_QUIET);
+  };
+  void listen("lazer-maps", lazerMaps);
+  // from the companion window: a play to show, or it was closed
+  void listen<string>("show-score", (e) => go({ name: "score", id: e.payload }));
+  void listen("companion-closed", () => setPrefs({ companion: false }));
+  if (store.prefs.companion) void api.openCompanion().catch((e) => console.warn("[companion]", asApiError(e).message));
+}
+
+/** Follow osu! (prefs followOsu): runs in the background; a map started in osu! opens the visualizer,
+ * and leaving the map (or osu!) closes it again when it was the one that opened it. Leaving a map
+ * you failed on (and didn't pass after) opens your tries at it, with the fail to practise. */
+function initFollow(): void {
+  const apply = () => (store.prefs.followOsu ? follow.start() : follow.stop());
+  apply();
+  events.on("prefs", (p) => "followOsu" in p && apply());
+  follow.bus.on("play", () => {
+    if (visit && visit.md5 !== follow.current) visit = null;
+    if (fullscreenOpen()) return;
+    openFullscreen("visual");
+    followOpened = fullscreenOpen();
+  });
+  follow.bus.on("attempt", (a) => {
+    if (!visit || visit.md5 !== a.md5) visit = { md5: a.md5, tries: [] };
+    visit.tries.push(a);
+    if (active instanceof TriesView) active.add(a);
+    if (active instanceof ScoreView) active.add(a);
+  });
+  follow.bus.on("leave", (md5) => {
+    if (followOpened && fullscreenOpen()) closeFullscreen();
+    followOpened = false;
+    // the last try is kept a moment after osu! has left the map
+    window.setTimeout(() => {
+      const v = visit;
+      visit = null;
+      if (!v || !md5 || v.md5 !== md5 || v.tries.some((a) => a.outcome === "pass")) return;
+      const fail = [...v.tries].reverse().find((a) => a.outcome === "fail");
+      if (fail) go({ name: "tries", md5, at: fail.id });
+    }, LAST_TRY_WAIT);
+  });
+}
+
+/** Song select on the second screen (prefs followSelect): the map picked in osu!'s song select
+ * opens on its page in Sora, its chart open, at osu!'s mods (the rate follows on its own, lib/tosu-follow).
+ * Only from the library, home or a map's page, so it never pulls you out of anything else; going
+ * from one map to the next replaces the page instead of piling up history. */
+function initSongSelect(): void {
+  let timer = 0;
+  /** the map and mods shown last (or passed over: on another page), and the ones waited on */
+  let shown = "";
+  let waiting = "";
+  const show = async (now: TosuNow): Promise<void> => {
+    shown = `${now.md5}|${now.play.modList.join("")}`;
+    const id = await api.mapByMd5(now.md5).catch(() => null);
+    const snap = store.snap;
+    const map = id && snap ? snap.maps.find((m) => m.id === id) : undefined;
+    if (!map || !snap || follow.current !== now.md5) return;
+    pickPpMods(map.mode, now.play.modList);
+    const here = current();
+    if (fullscreenOpen() || !SELECT_FROM.has(here.name)) return;
+    go({ name: "set", id: snap.sets[map.set].id, map: map.id }, { replace: here.name === "set" });
+  };
+  follow.bus.on("tosu", (now) => {
+    if (!store.prefs.followSelect || (now.state !== STATE.selectPlay && now.state !== STATE.selectEdit) || !now.md5) return;
+    const key = `${now.md5}|${now.play.modList.join("")}`;
+    if (key === shown || key === waiting) return;
+    // scrolling through song select: only the map it stops on (tosu says it again every 150 ms)
+    waiting = key;
+    clearTimeout(timer);
+    timer = window.setTimeout(() => {
+      waiting = "";
+      void show(now);
+    }, SELECT_SETTLE);
+  });
+  follow.bus.on("leave", () => (shown = waiting = ""));
+}
+/** the pages song select may replace (initSongSelect) */
+const SELECT_FROM = new Set<Route["name"]>(["home", "library", "set", "collection"]);
+/** ms osu!'s song select has to rest on a map before Sora shows it */
+const SELECT_SETTLE = 350;
+
+/** the visualizer is open because a map started in osu! (initFollow) */
+let followOpened = false;
+/** the tries at the map osu! is on, since it was started (initFollow) */
+let visit: { md5: string; tries: Attempt[] } | null = null;
+/** ms the tries page waits after leaving a map for its last try to be kept */
+const LAST_TRY_WAIT = 900;
+
+void boot();

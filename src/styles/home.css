@@ -1,0 +1,379 @@
+/* ===========================================================================
+   Home — greeting over a bento of tiles (views/home.ts)
+   =========================================================================== */
+
+.home-view { container-type: inline-size; padding-bottom: 56px; }
+
+/* ---------- Greeting ---------- */
+.home-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 44px 0 36px;
+  text-align: center;
+}
+.hero-icon { color: var(--accent); animation: hero-drop .6s var(--ease-out) both; }
+.hero-icon .ic { width: 60px; height: 60px; }
+.hero-title {
+  margin-top: 14px;
+  font-size: var(--fs-hero);
+  font-weight: 700;
+  letter-spacing: -.02em;
+  line-height: 1.15;
+  animation: hero-rise .55s var(--ease-out) .12s both;
+}
+.hero-name { color: var(--accent-ink); transition: color .9s var(--ease-std); }
+.hero-sub { margin-top: 8px; font-size: var(--fs-12); color: var(--t3); animation: hero-rise .55s var(--ease-out) .2s both; }
+@keyframes hero-drop { from { opacity: 0; transform: translateY(-22px) scale(.8); } }
+@keyframes hero-rise { from { opacity: 0; transform: translateY(16px); } }
+
+/* ---------- Bento: tiles of different sizes, one job each ----------
+   narrow: one column; medium: two; wide: a 12-column grid with the last play big at the top left */
+.bento {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "continue" "session" "progress" "played" "picks" "added" "collections" "most" "again";
+  gap: 14px;
+}
+@container (min-width: 720px) {
+  .bento {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "continue continue"
+      "session progress"
+      "played played"
+      "picks added"
+      "picks collections"
+      "most again";
+  }
+}
+@container (min-width: 980px) {
+  .bento {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    grid-template-areas:
+      "continue continue continue continue continue continue continue session session session session session"
+      "continue continue continue continue continue continue continue progress progress progress progress progress"
+      "played played played played played played played played played played played played"
+      "picks picks picks picks picks added added added added added added added"
+      "picks picks picks picks picks collections collections collections collections collections collections collections"
+      "most most most most most most again again again again again again";
+  }
+}
+.bt-continue { grid-area: continue; }
+.bt-session { grid-area: session; }
+.bt-progress { grid-area: progress; }
+.bt-played { grid-area: played; }
+.bt-picks { grid-area: picks; }
+.bt-added { grid-area: added; }
+.bt-collections { grid-area: collections; }
+.bt-most { grid-area: most; }
+.bt-again { grid-area: again; }
+
+.bt {
+  position: relative;
+  min-width: 0;
+  padding: 16px 18px;
+  border-radius: var(--r-2xl);
+  background: color-mix(in srgb, var(--bg-surface) 55%, transparent);
+  box-shadow: inset 0 0 0 1px var(--stroke-dim);
+  animation: bt-in .45s var(--ease-out) both;
+}
+.bento > :nth-child(2) { animation-delay: 40ms; }
+.bento > :nth-child(3) { animation-delay: 80ms; }
+.bento > :nth-child(4) { animation-delay: 120ms; }
+.bento > :nth-child(n + 5) { animation-delay: 160ms; }
+@keyframes bt-in { from { opacity: 0; transform: translateY(10px); } }
+@media (prefers-reduced-motion: reduce) { .bt { animation: none; } }
+
+.bt-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 24px; margin-bottom: 10px; }
+.bt-head .section-title { margin: 0; }
+.bt-link {
+  padding: 3px 8px;
+  margin-right: -8px;
+  border-radius: var(--r-full);
+  font-size: var(--fs-11);
+  color: var(--t3);
+  transition: color .15s var(--ease-std), background-color .15s var(--ease-std);
+}
+.bt-link:hover { color: var(--t1); background: var(--tint-hover); }
+.bt-hint { font-size: var(--fs-12); color: var(--t3); line-height: 1.5; }
+
+/* where you left off: the set's artwork under the whole tile */
+.bt-continue {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 260px;
+  padding: 22px 24px;
+  overflow: hidden;
+  background: var(--bg-surface);
+  isolation: isolate;
+}
+.bt-cover { position: absolute; inset: 0; z-index: -1; background: var(--placeholder-gradient); }
+.bt-art {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transform: scale(1.03);
+  transition: opacity .5s var(--ease-std), transform 1.2s var(--ease-out);
+}
+.bt-art.loaded { opacity: 1; transform: none; }
+.bt-scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(to top, rgba(0, 0, 0, .88) 0%, rgba(0, 0, 0, .55) 45%, rgba(0, 0, 0, .15) 100%),
+    linear-gradient(to right, rgba(0, 0, 0, .35), transparent 60%);
+}
+.bt-continue .label-caps { color: rgba(255, 255, 255, .7); }
+.bt-continue-row { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 18px; margin-top: 6px; }
+.bt-continue-text { flex: 1 1 260px; }
+.bt-continue-text { min-width: 0; }
+.bt-title {
+  font-size: calc(var(--fs-hero) * .78);
+  font-weight: 700;
+  line-height: 1.12;
+  letter-spacing: -.015em;
+  color: #fff;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, .4);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.bt-sub { margin-top: 4px; font-size: var(--fs-13); color: rgba(255, 255, 255, .78); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bt-sub span { color: rgba(255, 255, 255, .55); }
+.bt-result { display: flex; align-items: flex-end; gap: 12px; flex: none; }
+.bt-grade { font-size: 46px; font-weight: 700; line-height: .9; color: var(--c); text-shadow: 0 2px 20px color-mix(in srgb, var(--c) 40%, transparent); }
+.bt-acc { display: flex; flex-direction: column; align-items: flex-end; }
+.bt-acc b { font-size: var(--fs-20); font-weight: 700; color: #fff; }
+.bt-acc span { font-size: var(--fs-11); color: rgba(255, 255, 255, .62); }
+.bt-acc span.up { color: var(--success); }
+.bt-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.bt-continue .btn:not(.btn-primary) { background: rgba(255, 255, 255, .12); color: #fff; }
+.bt-continue .btn:not(.btn-primary):hover { background: rgba(255, 255, 255, .2); }
+.bt-play .ic-pause { display: none; }
+.bt-play.playing:not(.paused) .ic-pause { display: block; }
+.bt-play.playing:not(.paused) .ic-play { display: none; }
+
+/* numbers in a small grid */
+.bt-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.bt-stats.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.bt-stats > div { display: flex; flex-direction: column; gap: 1px; padding: 8px 12px; border-radius: var(--r-lg); background: var(--fill-subtle); min-width: 0; }
+.bt-stats i { font-style: normal; font-size: var(--fs-11); color: var(--t3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bt-stats b { font-size: var(--fs-18); font-weight: 650; white-space: nowrap; }
+.bt-stats b.up { color: var(--success); }
+
+.bt-goals { display: flex; flex-direction: column; gap: 12px; }
+.bt-goal-top { display: flex; justify-content: space-between; gap: 10px; font-size: var(--fs-12); }
+.bt-goal-top b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bt-goal-top span { color: var(--t3); white-space: nowrap; }
+.bt-bar { height: 6px; margin-top: 6px; border-radius: var(--r-full); background: var(--fill-subtle); overflow: hidden; }
+.bt-bar i { display: block; height: 100%; min-width: 3px; border-radius: inherit; background: var(--accent); transition: width .6s var(--ease-out); }
+
+/* shelves in a tile: smaller cards */
+.bt.shelf .shelf-track { margin: 0 -18px -6px; padding: 8px 18px 8px; scroll-padding-inline: 18px; }
+.bt.shelf .shelf-head { margin-bottom: 0; }
+.bt .hcard { width: 168px; }
+.bt-added .hcard { width: 148px; }
+
+/* quick picks: the panel is the tile */
+.bt-picks.dial { padding: 16px 18px 12px; }
+
+/* collections: a mosaic of covers each */
+.bt-cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 10px; }
+.bt-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  margin: -8px -8px 0;
+  border-radius: var(--r-xl);
+  text-align: left;
+  color: var(--t1);
+  transition: background-color .15s var(--ease-std);
+}
+.bt-col:hover { background: var(--tint-hover); }
+.bt-mosaic {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  aspect-ratio: 1;
+  margin-bottom: 6px;
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  background: var(--fill-subtle);
+  box-shadow: var(--elevation-1);
+  place-items: center;
+  color: var(--t3);
+}
+.bt-mosaic img { width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .3s var(--ease-std); }
+.bt-mosaic img.loaded { opacity: 1; }
+.bt-mosaic.n1 { grid-template-columns: 1fr; }
+.bt-mosaic.n1 img { grid-row: span 2; }
+.bt-mosaic.n2 img { grid-row: span 2; }
+.bt-mosaic.n3 img:first-child { grid-row: span 2; }
+.bt-mosaic.n0 .ic { width: 28px; height: 28px; grid-column: span 2; }
+.bt-col-name { font-size: var(--fs-13); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bt-col-n { font-size: var(--fs-11); color: var(--t3); }
+
+/* short lists: most played, haven't played in a while */
+.bt-rows { display: flex; flex-direction: column; gap: 2px; margin: 0 -8px; }
+.bt-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px;
+  border-radius: var(--r-lg);
+  cursor: pointer;
+  transition: background-color .15s var(--ease-std);
+}
+.bt-row:hover { background: var(--tint-hover); }
+.bt-row-art { width: 44px; height: 44px; aspect-ratio: 1; border-radius: var(--r-md); box-shadow: var(--elevation-1); }
+.bt-row:hover .bt-row-art { transform: none; box-shadow: var(--elevation-1); }
+.bt-row-art .card-play { inset: 0; margin: auto; width: 28px; height: 28px; transform: scale(.85); }
+.bt-row-art .card-play .ic { width: 13px; height: 13px; }
+.bt-row.playing .bt-row-text b { color: var(--accent-ink); }
+.bt-row-text { display: flex; flex-direction: column; min-width: 0; }
+.bt-row-text b, .bt-row-text span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bt-row-text b { font-size: var(--fs-13); font-weight: 600; }
+.bt-row-text span { font-size: var(--fs-12); color: var(--t3); }
+.bt-row-meta { font-size: var(--fs-11); color: var(--t3); white-space: nowrap; }
+
+/* ---------- Shelf ---------- */
+.shelf { min-width: 0; }
+.shelf-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.shelf-head .section-title { margin: 0; }
+
+.pager { display: flex; gap: 6px; flex: none; }
+.pager-btn {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 32px;
+  border-radius: 16px;
+  background: var(--fill-subtle);
+  color: var(--t2);
+  transition: background .15s var(--ease-std), color .15s var(--ease-std), transform .22s var(--ease-spring);
+}
+.pager-btn .ic { width: 17px; height: 17px; }
+.pager-btn:hover { background: var(--fill-mod); color: var(--t1); }
+.pager-btn:active { transform: scale(.94); }
+.pager-btn:disabled { opacity: .35; }
+
+/* edges fade out where there is more to scroll */
+@property --fade-l { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@property --fade-r { syntax: "<length>"; inherits: false; initial-value: 0px; }
+.shelf-track {
+  display: flex;
+  gap: 16px;
+  margin: 0 -4px;
+  padding: 10px 4px 14px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 var(--fade-l), #000 calc(100% - var(--fade-r)), transparent 100%);
+          mask-image: linear-gradient(90deg, transparent 0, #000 var(--fade-l), #000 calc(100% - var(--fade-r)), transparent 100%);
+  transition: --fade-l .3s var(--ease-std), --fade-r .3s var(--ease-std);
+}
+.shelf-track::-webkit-scrollbar { display: none; }
+.shelf-track.more-left { --fade-l: 28px; }
+.shelf-track.more-right { --fade-r: 28px; }
+
+.hcard { flex: none; width: 208px; }
+.card-meta { margin-top: 2px; font-size: var(--fs-11); color: var(--t3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- Quick picks (speed dial) ---------- */
+.dial {
+  padding: 14px 16px 12px;
+  border-radius: var(--r-2xl);
+  background: color-mix(in srgb, var(--bg-surface) 55%, transparent);
+  -webkit-backdrop-filter: blur(16px);
+          backdrop-filter: blur(16px);
+}
+.dial-head { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+.dial-head .label-caps { flex: 1; }
+.dial-reroll { color: var(--t3); }
+.dial-reroll:active .ic { animation: nav-pop .32s var(--ease-spring); }
+
+.dial-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.tile {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  background: var(--placeholder-gradient);
+  box-shadow: var(--elevation-2);
+}
+.tile-empty { box-shadow: none; background: var(--fill-subtle); }
+.dial-grid.turn .tile { animation: tile-in .32s var(--ease-out) both; animation-delay: calc(var(--k, 0) * 22ms); }
+@keyframes tile-in { from { opacity: 0; transform: scale(.94); } }
+.tile img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity .3s var(--ease-std), transform .4s var(--ease-out);
+}
+.tile img.loaded { opacity: 1; }
+.tile::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, .85) 0%, rgba(0, 0, 0, .45) 32%, transparent 60%);
+  pointer-events: none;
+}
+.tile-text { position: absolute; left: 8px; right: 8px; bottom: 7px; z-index: 1; text-shadow: 0 1px 3px rgba(0, 0, 0, .5); }
+.tile-title { font-size: var(--fs-11); font-weight: 700; color: #fff; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile-sub { font-size: var(--fs-10); color: rgba(255, 255, 255, .78); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile-play {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, .4);
+  opacity: 0;
+  transition: opacity .18s var(--ease-std);
+}
+.tile-play::before {
+  content: "";
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: var(--elevation-2);
+  transform: scale(.85);
+  transition: transform .2s var(--ease-out);
+}
+.tile-play .ic { position: relative; width: 15px; height: 15px; color: var(--on-accent); }
+.tile-play .ic-play { margin-left: 2px; }
+.tile-play .ic-pause { display: none; }
+.tile:hover .tile-play, .tile.playing .tile-play { opacity: 1; }
+.tile:hover .tile-play::before, .tile.playing .tile-play::before { transform: none; }
+.tile:hover img { transform: scale(1.05); }
+.tile.playing:not(.paused) .tile-play .ic-pause { display: block; }
+.tile.playing:not(.paused) .tile-play .ic-play { display: none; }
+.tile:active .tile-play::before { transform: scale(.92); }
+
+.dial-dots { display: flex; justify-content: center; gap: 6px; margin-top: 12px; }
+.dial-dots > button {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-full);
+  background: var(--fill-strong);
+  transition: width .2s var(--ease-std), background .2s var(--ease-std);
+}
+.dial-dots > button:hover { background: var(--t3); }
+.dial-dots > button.on { width: 18px; background: var(--accent); }

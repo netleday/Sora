@@ -1,0 +1,391 @@
+/* ===========================================================================
+   Fullscreen player — the visualizer or the playfield
+   =========================================================================== */
+
+.fs {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  background: #08080b;
+  color: var(--t1);
+  opacity: 0;
+  transition: opacity .24s var(--ease-std);
+}
+.fs.on { opacity: 1; }
+/* once it has faded in, the app behind it isn't drawn at all (it's covered anyway): one window of
+   layers less for every frame; it shows again the moment the overlay starts to go */
+body.fs-open #app, body.fs-open .ambient { visibility: hidden; transition: visibility 0s .25s; }
+/* Linux: no fade, which would keep the whole overlay on a layer of its own (see shell.css) */
+:root.linux .fs { transition: none; }
+.fs > header, .fs > main, .fs > footer { position: relative; z-index: 1; }
+
+/* the art, blurred, behind everything */
+.fs-bg { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+.fs-bg img {
+  position: absolute;
+  inset: -8%;
+  width: 116%;
+  height: 116%;
+  object-fit: cover;
+  filter: blur(64px) saturate(1.25) brightness(.42);
+  opacity: 0;
+  transition: opacity .6s var(--ease-std);
+}
+.fs-bg img.loaded { opacity: 1; }
+.fs-bg::after { content: ""; position: absolute; inset: 0; background: radial-gradient(ellipse 80% 70% at 50% 42%, transparent, rgba(0, 0, 0, .58)); }
+.fs[data-mode="field"] .fs-bg img { filter: blur(72px) saturate(1.1) brightness(.26); }
+
+/* ---------- Top ---------- */
+.fs-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 24px;
+  padding: 18px 24px 10px;
+}
+.fs-now { min-width: 0; opacity: 0; transition: opacity .2s var(--ease-std); }
+.fs[data-mode="field"] .fs-now { opacity: 1; }
+.fs-now-title { font-size: var(--fs-14); font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fs-now-sub { font-size: var(--fs-12); color: var(--t3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fs-modes { background: rgba(255, 255, 255, .08); }
+.fs-modes > button { padding: 0 16px; }
+/* it fills the app window, not the screen: the window's own controls move in beside the exit */
+.fs-top-r { display: flex; align-items: center; justify-content: flex-end; gap: 14px; }
+.fs-top:has(.win-controls) { padding-top: 6px; padding-right: 6px; }
+:root.mac .fs-top { padding-left: 92px; }
+/* back to the app: top left, away from the window's own close button */
+.fs-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.fs-exit {
+  flex: none;
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 32px; padding: 0 14px 0 10px;
+  border-radius: var(--r-full);
+  background: rgba(255, 255, 255, .08);
+  color: var(--t1);
+  font-size: var(--fs-12); font-weight: 600;
+  transition: background .15s var(--ease-std), transform .22s var(--ease-spring);
+}
+.fs-exit:hover { background: rgba(255, 255, 255, .14); }
+.fs-exit:active { transform: scale(.97); }
+.fs-exit .ic { width: 16px; height: 16px; }
+
+.fs-body { position: relative; min-height: 0; }
+.fs-visual, .fs-field { position: absolute; inset: 0; }
+.fs[data-mode="visual"] .fs-field, .fs[data-mode="field"] .fs-visual { display: none; }
+.fs-visual, .fs-field { animation: fade-in .3s var(--ease-std); }
+
+/* ---------- Visualizer (views/vis): one canvas under everything, its settings on the right ---------- */
+.fs-vis { position: absolute; inset: 0; z-index: 0; display: block; width: 100%; height: 100%; }
+.fs[data-mode="field"] .fs-vis, .fs[data-mode="field"] .fs-vis-ctl { display: none; }
+/* the canvas draws its own background */
+.fs[data-mode="visual"] .fs-bg { display: none; }
+/* the frame meter's "no background" test (Ctrl+F12) */
+.fs.test-no-bg .fs-bg { display: none; }
+/* … and "nothing behind": the app under the fullscreen view not drawn */
+body.fs-test-alone #app { visibility: hidden; }
+/* … and "no blur effects": no filter or backdrop blur anywhere */
+body.fs-test-no-blur *, body.fs-test-no-blur *::before, body.fs-test-no-blur *::after {
+  filter: none !important;
+  -webkit-backdrop-filter: none !important;
+          backdrop-filter: none !important;
+}
+.fs-visual { pointer-events: none; }
+.fs-vis-ctl { display: flex; align-items: center; gap: 6px; }
+.fs-style, .vp-style { background: rgba(255, 255, 255, .08); }
+.vp-style { align-self: flex-start; }
+/* a narrow window has no room for it beside the views: it's in the panel too */
+@media (max-width: 900px) { .fs-vis-ctl > .fs-style { display: none; } }
+.fs-tune .ic { width: 20px; height: 20px; }
+.fs-tune[aria-expanded="true"] { background: rgba(255, 255, 255, .1); color: var(--t1); }
+.fs-vis-panel {
+  position: absolute;
+  top: 4px;
+  right: 24px;
+  bottom: 8px;
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 18px 18px;
+  overflow-y: auto;
+  scrollbar-width: none;
+  border-radius: var(--r-2xl);
+  background: rgba(14, 14, 16, .74);
+  backdrop-filter: blur(24px) saturate(1.4);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .45), inset 0 0 0 .5px rgba(255, 255, 255, .08);
+  pointer-events: auto;
+  animation: fade-in .2s var(--ease-std);
+}
+.fs-vis-panel[hidden] { display: none; }
+.vp-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.vp-head b { font-size: var(--fs-16); font-weight: 650; }
+.vp-row { display: flex; flex-direction: column; gap: 8px; }
+.vp-seg { display: flex; }
+.vp-seg > button { flex: 1; padding: 0 8px; }
+.vp-range-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.vp-range-top b { font-size: var(--fs-12); font-weight: 600; color: var(--t2); }
+.vp-range input { width: 100%; margin: 2px 0; }
+.vp-range:has(input:disabled) { opacity: .4; }
+.vp-ends { display: flex; justify-content: space-between; margin-top: -4px; font-size: var(--fs-11); color: var(--t4); }
+.vp-swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.vp-swatches[hidden] { display: none; }
+.vp-swatch { width: 28px; height: 28px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .12); transition: box-shadow .12s var(--ease-std); }
+.vp-swatch.on { box-shadow: 0 0 0 2px #0e0e10, 0 0 0 4px var(--t1); }
+.vp-switches { display: flex; flex-direction: column; gap: 12px; }
+.vp-switch { display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer; }
+.vp-switch > span { display: flex; flex-direction: column; min-width: 0; }
+.vp-switch b { font-size: var(--fs-13); font-weight: 600; }
+.vp-switch i { font-style: normal; font-size: var(--fs-12); color: var(--t3); }
+.vp-follow i { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* what answers the play hangs under Follow osu!, quieter while that's off */
+.vp-play { margin-top: -4px; padding-left: 12px; border-left: 1px solid rgba(255, 255, 255, .1); transition: opacity .15s var(--ease-std); }
+.fs-vis-panel:has(.vp-follow input:not(:checked)) .vp-play { opacity: .45; }
+.vp-reset { align-self: flex-start; }
+
+/* cinema: while the visualizer plays untouched, the bars and the cursor go */
+.fs-top, .fs-bar { transition: opacity .4s var(--ease-std), transform .4s var(--ease-std); }
+.fs.idle .fs-top, .fs.idle .fs-bar { opacity: 0; }
+/* Stage: the transport slides down as it fades, the light strip on the floor riding along (views/vis) */
+.fs[data-mode="visual"][data-vis="stage"].idle .fs-bar { transform: translateY(100%); }
+.fs.idle { cursor: none; }
+
+/* ---------- Playfield ---------- */
+.fs-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 440px);
+  gap: 40px;
+  padding: 0 56px 0 24px;
+}
+.fs-stage { position: relative; display: flex; justify-content: center; min-height: 0; }
+/* the skin draws the stage itself, centred in the whole area */
+.fs-pf {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.fs-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+  color: var(--t2);
+}
+.fs-empty > .ic { width: 44px; height: 44px; margin-bottom: 6px; color: var(--accent-ink); }
+.fs-empty-title { font-size: var(--fs-16); font-weight: 650; color: var(--t1); }
+.fs-empty p { margin: 0; max-width: 360px; }
+.fs-empty-list { display: flex; flex-direction: column; gap: 4px; width: min(360px, 100%); margin-top: 10px; }
+.fs-pick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: var(--r-lg);
+  background: rgba(255, 255, 255, .06);
+  text-align: left;
+  transition: background .12s var(--ease-std);
+}
+.fs-pick:hover { background: rgba(255, 255, 255, .11); }
+.fs-pick span { flex: 1; min-width: 0; font-weight: 600; color: var(--t1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fs-pick i { font-style: normal; font-size: var(--fs-12); color: var(--t3); }
+
+/* info beside the playfield */
+.fs-info {
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  scrollbar-width: none;
+  transition: opacity .2s var(--ease-std);
+}
+/* when it's taller than the window it scrolls; nothing in it gets squashed (the graph went flat) */
+.fs-info > * { flex-shrink: 0; }
+.fs-info.dim { opacity: .35; pointer-events: none; }
+.fs-info.off { visibility: hidden; opacity: 0; }
+.fs-diff {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 12px;
+  margin: 0 -12px;
+  border-radius: var(--r-lg);
+  text-align: left;
+  transition: background .12s var(--ease-std);
+}
+.fs-diff:hover { background: rgba(255, 255, 255, .06); }
+.fs-diff > .ic { width: 18px; height: 18px; margin-left: auto; color: var(--t3); }
+.fs-diff-name { display: flex; flex-direction: column; min-width: 0; }
+.fs-diff-name b { font-size: var(--fs-16); font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fs-diff-name span { font-size: var(--fs-12); color: var(--t3); }
+
+.fs-live { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.fs-stat {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 14px 16px;
+  border-radius: var(--r-xl);
+  background: rgba(255, 255, 255, .05);
+}
+.fs-stat[hidden] { display: none; }
+.fs-k { font-size: var(--fs-11); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--t3); }
+.fs-stat b { margin-top: 4px; font-size: 30px; font-weight: 700; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fs-stat b[data-live="pattern"] { font-size: 24px; color: var(--accent-ink); }
+.fs-s { min-height: 1.4em; margin-top: 2px; font-size: var(--fs-12); color: var(--t3); }
+
+.fs-graph {
+  position: relative;
+  height: 84px;
+  border-radius: var(--r-lg);
+  background: rgba(255, 255, 255, .04);
+  overflow: hidden;
+  cursor: pointer;
+}
+.fs-graph canvas { display: block; width: 100%; height: 100%; }
+.fs-graph { touch-action: none; }
+/* the part practice mode loops */
+.fs-graph-loop {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--accent);
+  opacity: .2;
+  border-radius: 3px;
+  pointer-events: none;
+}
+.fs-graph-loop[hidden] { display: none; }
+/* a replay's misses */
+.fs-graph-marks { position: absolute; inset: 0; pointer-events: none; }
+.fs-graph-marks i { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #ed1121; opacity: .75; }
+
+/* ---------- a replay, as it goes ---------- */
+.fs-replay { display: flex; flex-direction: column; gap: 12px; }
+.fs-replay[hidden] { display: none; }
+.fs-replay-top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 10px; }
+.fs-acc b { color: var(--t1); }
+.fs-counts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: center;
+  gap: 4px 14px;
+  padding: 12px 16px;
+  border-radius: var(--r-xl);
+  background: rgba(255, 255, 255, .05);
+  font-size: var(--fs-12);
+}
+.fs-counts span { display: flex; justify-content: space-between; gap: 8px; }
+.fs-counts i { font-style: normal; color: var(--c); }
+.fs-counts b { font-weight: 650; color: var(--t1); }
+.fs-errors-box { padding: 0 2px; }
+.fs-errors { display: block; width: 100%; height: 28px; }
+.fs-errors-axis { display: flex; justify-content: space-between; gap: 12px; margin-top: 4px; font-size: var(--fs-11); color: var(--t3); }
+.fs-miss-nav { display: flex; align-items: center; gap: 10px; }
+.fs-miss-nav b { font-size: var(--fs-14); font-weight: 650; }
+.fs-miss-btns { display: inline-flex; gap: 2px; margin-left: auto; }
+.fs-pr-ctl { display: flex; flex-wrap: wrap; gap: 6px; }
+.fs-pr-ctl .ic { width: 14px; height: 14px; }
+.fs-pr-sub { font-size: var(--fs-12); color: var(--t3); font-variant-numeric: tabular-nums; }
+.fs-axis { display: flex; justify-content: space-between; gap: 12px; margin-top: -10px; font-size: var(--fs-11); color: var(--t3); }
+
+.fs-setting { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; }
+.fs-setting[hidden] { display: none; }
+.fs-setting > .fs-k { width: 100%; }
+.fs-speed { display: inline-flex; align-items: center; gap: 2px; }
+.fs-speed-val { min-width: 44px; text-align: center; font-size: var(--fs-16); font-weight: 700; }
+.fs-speed-sub { font-size: var(--fs-12); color: var(--t3); }
+.fs-speed-reset { font: inherit; color: var(--accent-ink); transition: color .12s; }
+.fs-speed-reset:hover { color: var(--t1); }
+.fs-hs { display: inline-flex; align-items: center; gap: 12px; }
+.fs-hs-vol { width: 150px; margin: 0; }
+.fs-hs-val { min-width: 44px; font-size: var(--fs-16); font-weight: 700; }
+.fs-hs-sub { font-size: var(--fs-12); color: var(--t3); }
+.fs-hs-sub:empty { display: none; }
+.fs-skin {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 7px 10px 7px 12px;
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, .06);
+  font: inherit;
+  font-size: var(--fs-14);
+  font-weight: 600;
+  color: var(--t1);
+  transition: background .12s;
+}
+.fs-skin:hover { background: rgba(255, 255, 255, .1); }
+.fs-skin-name, .fs-replay-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fs-skin > .ic { flex: none; width: 16px; height: 16px; color: var(--t3); }
+.fs-skin-sub, .fs-replay-sub { font-size: var(--fs-12); color: var(--t3); min-width: 0; }
+.fs-rate-ctl { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; }
+.fs-mods { display: flex; flex-wrap: wrap; gap: 6px; }
+.fs-mod { min-width: 42px; justify-content: center; letter-spacing: .03em; }
+.fs-mods-sub { font-size: var(--fs-12); color: var(--t3); }
+.fs-mods-sub:empty { display: none; }
+.fs .seg-pill { background: rgba(255, 255, 255, .08); }
+
+/* ---------- Transport ---------- */
+.fs-bar { padding: 0 28px 18px; }
+/* moved every frame here, so no easing behind the song */
+.fs-seek .pb-seek-fill { transition: none; }
+.fs-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 24px;
+  margin-top: 6px;
+}
+.fs-time { font-size: var(--fs-12); color: var(--t2); }
+.fs-rate { margin-left: 10px; font-weight: 600; color: var(--accent-ink); }
+.fs-ctrl { display: flex; align-items: center; gap: 10px; }
+
+@media (max-width: 1100px) {
+  .fs-field { grid-template-columns: minmax(0, 1fr) minmax(300px, 360px); gap: 24px; padding: 0 24px 0 12px; }
+  .fs-stat b { font-size: 24px; }
+}
+
+/* the song's volume, in both views */
+.fs-volume { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.fs-vol { width: 110px; margin: 0; }
+
+/* Ctrl+F11: frames a second and drawing time */
+.fs-fps {
+  position: absolute;
+  top: 64px;
+  left: 16px;
+  z-index: 5;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, .6);
+  color: #fff;
+  font-size: 12px;
+  pointer-events: none;
+}
+
+/* the combo, in the playfield's corner like lazer's */
+.fs-combo {
+  position: absolute;
+  left: 4px;
+  bottom: 6px;
+  font-size: 34px;
+  font-weight: 800;
+  line-height: 1;
+  color: #fff;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, .55);
+  transform-origin: left bottom;
+  pointer-events: none;
+}
+.fs-combo:empty { display: none; }

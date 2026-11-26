@@ -1,0 +1,66 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Sora",
+  "version": "2.0.0",
+  "identifier": "dev.sora.app",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1430",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Sora",
+        "width": 1440,
+        "height": 900,
+        "maximized": true,
+        "minWidth": 1000,
+        "minHeight": 640,
+        "center": true,
+        "resizable": true,
+        "decorations": false,
+        "backgroundColor": "#0d0d0d",
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": {
+        "default-src": "'self' ipc: http://ipc.localhost",
+        "img-src": "'self' data: blob: fumen: http://fumen.localhost https://assets.ppy.sh https://a.ppy.sh https://circle-people.com https://cdn.osuskinner.com",
+        "media-src": "'self' blob: fumen: http://fumen.localhost http://127.0.0.1:* https://catboy.best https://osu.direct https://b.ppy.sh",
+        "style-src": "'self' 'unsafe-inline'",
+        "font-src": "'self' data:",
+        "connect-src": "'self' ipc: http://ipc.localhost fumen: http://fumen.localhost https://api.github.com https: ws://127.0.0.1:24050 ws://localhost:24050 ws://127.0.0.1:* ws://localhost:*",
+        "object-src": "'none'",
+        "frame-src": "'self'",
+        "base-uri": "'none'",
+        "form-action": "'none'"
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "externalBin": ["binaries/sora-realm"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDcxMkM1QTVBMUQyQTcwODUKUldTRmNDb2RXbG9zY1pTUkVOR2QxbUlBSGJtSCtncSt3SmEya1FUR0lJVVVDQjBJbGgvc0JBWG8K",
+      "endpoints": ["https://fumen.dertesti.dev/updates/latest.json"],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}

@@ -1,0 +1,347 @@
+/* sora-topbar.css — Fully Transparent, Borderless, Grid-Centered Top Navbar */
+html,
+body {
+  height: 100vh !important;
+  max-height: 100vh !important;
+  width: 100vw !important;
+  overflow: hidden !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.app {
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100vh !important;
+  max-height: 100vh !important;
+  width: 100vw !important;
+  overflow: hidden !important;
+}
+
+.sora-topbar {
+  position: relative;
+  flex-shrink: 0 !important;
+  z-index: 90;
+  height: 54px;
+  min-height: 54px;
+  padding: 0 18px;
+  display: grid !important;
+  grid-template-columns: 1fr auto 1fr !important;
+  align-items: center !important;
+  gap: 12px;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+.sora-top-left {
+  justify-self: start;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.sora-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 4px 8px 4px 2px;
+  border-radius: 10px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.sora-brand img {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  object-fit: cover;
+  filter: drop-shadow(0 0 10px rgba(157, 78, 221, 0.5));
+}
+
+.sora-brand-name {
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 0.4px;
+  background: linear-gradient(135deg, #ffffff 0%, #c77dff 60%, #ff6bcb 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.sora-brand-ver {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #e0aaff;
+  opacity: 0.85;
+}
+
+/* Center Animated Icon Nav (Strictly Centered, Transparent, Borderless) */
+.sora-topbar .sora-top-nav {
+  justify-self: center;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  flex-wrap: nowrap !important;
+  width: auto !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  min-width: 0;
+}
+
+.sora-topbar .sora-nav-pill {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: auto !important;
+  flex-shrink: 0 !important;
+  height: 34px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: rgba(240, 235, 255, 0.78);
+  cursor: pointer;
+  gap: 0;
+  transition: transform 0.24s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.22s ease, color 0.2s ease;
+  white-space: nowrap;
+}
+
+.sora-nav-pill svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.sora-nav-pill .sora-nav-text {
+  display: inline-block;
+  max-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 700;
+  margin-left: 0;
+  transition: max-width 0.28s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s ease, margin-left 0.24s ease;
+}
+
+.sora-topbar .sora-nav-pill:hover,
+.sora-topbar .sora-nav-pill.active {
+  color: #ffffff;
+  filter: drop-shadow(0 0 10px rgba(199, 125, 255, 0.9));
+  transform: translateY(-2px);
+}
+
+.sora-topbar .sora-nav-pill:hover .sora-nav-text,
+.sora-topbar .sora-nav-pill.active .sora-nav-text {
+  max-width: 140px;
+  opacity: 1;
+  margin-left: 7px;
+}
+
+/* Right Controls (Transparent & Vertically Centered) */
+.sora-top-right {
+  justify-self: end;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.sora-top-search {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.sora-top-search input {
+  width: 128px;
+  height: 32px;
+  padding: 0 24px 0 28px;
+  border-radius: 999px;
+  border: none !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  color: #fff;
+  font-size: 12.5px;
+  outline: none;
+  transition: width 0.22s ease, background 0.2s ease;
+}
+.sora-top-search input:focus {
+  width: 180px;
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+.sora-top-search .search-ic {
+  position: absolute;
+  left: 9px;
+  width: 14px;
+  height: 14px;
+  color: rgba(255, 255, 255, 0.65);
+  pointer-events: none;
+}
+.sora-top-search .search-clear {
+  position: absolute;
+  right: 4px;
+}
+
+/* osu! Launch / Close Button with pulsing SVG logo */
+.sora-top-play {
+  display: inline-flex;
+  align-items: center;
+}
+.sora-top-play .side-play {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  height: 34px !important;
+  width: auto !important;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.sora-top-play .side-play-go {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  white-space: nowrap !important;
+  height: 34px !important;
+  padding: 0 8px !important;
+  background: transparent !important;
+  border: none !important;
+  color: #ffffff;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.sora-osu-logo {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  color: #ffffff;
+  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.45));
+  transition: color 0.25s ease, filter 0.25s ease;
+}
+.side-play.running .sora-osu-logo {
+  color: #c77dff;
+  animation: sora-osu-pulse 1.9s ease-in-out infinite;
+}
+@keyframes sora-osu-pulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 6px rgba(199, 125, 255, 0.85));
+    transform: scale(1);
+  }
+  50% {
+    filter: drop-shadow(0 0 14px rgba(255, 107, 203, 0.95));
+    transform: scale(1.08);
+  }
+}
+.sora-top-play .side-play-pick {
+  width: 24px !important;
+  height: 34px !important;
+  background: transparent !important;
+  border: none !important;
+  color: rgba(255, 255, 255, 0.78);
+  cursor: pointer;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-shrink: 0;
+}
+.sora-top-play .side-play-pick:hover {
+  color: #fff;
+}
+.sora-top-play .side-play-pick svg {
+  width: 13px;
+  height: 13px;
+}
+
+.sora-top-profile.profile {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 7px;
+  height: 34px;
+  padding: 0 4px !important;
+  border-radius: 999px;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+.sora-top-profile .avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #9d4edd;
+  font-size: 11px;
+  font-weight: 800;
+  color: #fff;
+}
+.sora-top-profile .avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.sora-top-profile .profile-name {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #fff;
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sora-top-right .win-controls {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 2px;
+  margin-left: 2px;
+}
+
+/* Collections Dropdown Popover */
+.sora-col-pop {
+  position: fixed;
+  top: 58px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 310px;
+  max-height: 420px;
+  overflow-y: auto;
+  background: rgba(16, 12, 28, 0.96);
+  backdrop-filter: blur(18px);
+  border: 1px solid rgba(199, 125, 255, 0.35);
+  border-radius: 14px;
+  padding: 10px;
+  z-index: 150;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.65);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.main {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  width: 100% !important;
+  overflow: hidden !important;
+}
+
+.content {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
