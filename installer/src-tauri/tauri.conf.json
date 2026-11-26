@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Sora-v2.0-Setup",
-  "version": "2.0.0",
+  "productName": "Sora-v2.2-Setup",
+  "version": "2.2.0",
   "identifier": "dev.sora.setup",
   "build": {
     "frontendDist": "../dist"
@@ -11,7 +11,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Установка Sora v2.0",
+        "title": "Установка Sora v2.2",
         "width": 780,
         "height": 450,
         "resizable": false,

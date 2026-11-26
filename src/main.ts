@@ -103,7 +103,7 @@ app.innerHTML = `
       <div class="sora-brand" data-nav="home" data-tauri-drag-region>
         <img src="/sora_logo.png" alt="Sora" />
         <span class="sora-brand-name">Sora</span>
-        <span class="sora-brand-ver">v2.0</span>
+        <span class="sora-brand-ver">v2.2</span>
       </div>
       <button class="icon-btn side-refresh" type="button" aria-label="${t("Update library")}" data-tip="${t("Update library")}">${icon("refresh")}</button>
     </div>

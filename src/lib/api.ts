@@ -208,7 +208,7 @@ export const api = {
   /** the osu! account as last seen (no network) */
   osuAccount: () => invoke<OsuAccount | null>("osu_account"),
   /** logs in through the browser; resolves once it's back */
-  osuLogin: () => invoke<OsuAccount>("osu_login"),
+  osuLogin: (clientId?: string) => invoke<OsuAccount>("osu_login", { clientId: clientId ?? null }),
   osuLoginCancel: () => invoke<void>("osu_login_cancel"),
   /** the account as osu! has it now; null when not logged in (anymore) */
   osuRefreshAccount: () => invoke<OsuAccount | null>("osu_refresh_account"),

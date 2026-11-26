@@ -1048,7 +1048,7 @@ fn osu_account(state: State<'_, AppState>) -> Option<osu_auth::Account> {
 
 /// Logs in through the browser (see `osu_auth.rs`); resolves once the browser is back.
 #[tauri::command]
-async fn osu_login(app: AppHandle) -> Result<osu_auth::Account> {
+async fn osu_login(app: AppHandle, client_id: Option<String>) -> Result<osu_auth::Account> {
     tauri::async_runtime::spawn_blocking(move || {
         use tauri_plugin_opener::OpenerExt;
         online::ensure()?;
@@ -1057,12 +1057,25 @@ async fn osu_login(app: AppHandle) -> Result<osu_auth::Account> {
             return Err(Error::known("busy", "A login is already waiting for your browser."));
         }
         state.login_cancel.store(false, Ordering::SeqCst);
-        let client_id = state
-            .settings
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .osu_client_id
-            .unwrap_or(osu_auth::CLIENT_ID);
+        let parsed_arg = client_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .and_then(|s| s.parse::<u32>().ok())
+            .filter(|&id| id > 0);
+        let client_id = if let Some(cid) = parsed_arg {
+            let mut s = state.settings.lock().unwrap_or_else(|e| e.into_inner());
+            s.osu_client_id = Some(cid);
+            s.save(&state.settings_path);
+            cid
+        } else {
+            state
+                .settings
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .osu_client_id
+                .unwrap_or(osu_auth::CLIENT_ID)
+        };
         let result = osu_auth::login_with_client(&state.data_dir, &osu_auth::Endpoints::default(), client_id, &state.login_cancel, |url| {
             app.opener()
                 .open_url(url, None::<&str>)

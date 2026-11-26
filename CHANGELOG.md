@@ -1,6 +1,6 @@
 # Changelog
 
-## Sora v2.0 — Initial Release (после osumap roulette)
+## Sora v2.2 — Initial Release (после osumap roulette)
 
 - Новый кастомный лаунчер и компаньон для osu!lazer и osu!stable
 - Моя волна (My Wave) — персональные рекомендации карт на основе недавних скоров

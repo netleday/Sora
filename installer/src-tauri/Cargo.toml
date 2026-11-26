@@ -1,8 +1,8 @@
 [package]
 name = "sora-setup"
-version = "2.0.0"
+version = "2.2.0"
 authors = ["netleday"]
-description = "Sora v2.0 Custom Setup"
+description = "Sora v2.2 Custom Setup"
 edition = "2021"
 rust-version = "1.80"
 

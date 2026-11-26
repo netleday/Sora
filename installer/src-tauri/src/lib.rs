@@ -134,7 +134,7 @@ fn get_init_info() -> InitInfo {
 #[tauri::command]
 async fn pick_install_dir(app: AppHandle, current: String) -> Option<String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let mut dialog = app.dialog().file().set_title("Выберите папку установки Sora v2.0");
+        let mut dialog = app.dialog().file().set_title("Выберите папку установки Sora v2.2");
         let cur = PathBuf::from(&current);
         if cur.is_dir() {
             dialog = dialog.set_directory(&cur);
@@ -267,7 +267,7 @@ async fn start_install(
         std::fs::create_dir_all(&target_dir)
             .map_err(|e| format!("Не удалось создать папку установки: {e}"))?;
 
-        emit_progress(&handle, 10, "Распаковка файлов Sora v2.0...");
+        emit_progress(&handle, 10, "Распаковка файлов Sora v2.2...");
         let mut archive = zip::ZipArchive::new(Cursor::new(PAYLOAD_ZIP))
             .map_err(|e| format!("Ошибка чтения встроенного архива: {e}"))?;
 
@@ -312,7 +312,7 @@ async fn start_install(
                     .map_err(|e| format!("Ошибка записи файла: {e}"))?;
                 written_total += n as u64;
                 let pct = 10 + ((written_total * 65) / total_uncompressed) as u32;
-                emit_progress(&handle, pct.min(75), "Распаковка файлов Sora v2.0...");
+                emit_progress(&handle, pct.min(75), "Распаковка файлов Sora v2.2...");
             }
         }
 
@@ -357,11 +357,11 @@ async fn start_install(
                 }
             }
 
-            emit_progress(&handle, 96, "Регистрация Sora v2.0 в Windows...");
+            emit_progress(&handle, 96, "Регистрация Sora v2.2 в Windows...");
             let reg_key = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Sora";
             let uninst_cmd = format!("\"{}\" --uninstall", uninstall_exe.to_string_lossy());
-            reg_add_sz(reg_key, "DisplayName", "Sora v2.0")?;
-            reg_add_sz(reg_key, "DisplayVersion", "2.0.0")?;
+            reg_add_sz(reg_key, "DisplayName", "Sora v2.2")?;
+            reg_add_sz(reg_key, "DisplayVersion", "2.2.0")?;
             reg_add_sz(reg_key, "Publisher", "netleday")?;
             reg_add_sz(reg_key, "InstallLocation", &target_dir.to_string_lossy())?;
             reg_add_sz(reg_key, "DisplayIcon", &sora_exe.to_string_lossy())?;
@@ -370,7 +370,7 @@ async fn start_install(
             reg_add_dword(reg_key, "NoRepair", "1")?;
         }
 
-        emit_progress(&handle, 100, "Установка Sora v2.0 успешно завершена!");
+        emit_progress(&handle, 100, "Установка Sora v2.2 успешно завершена!");
         Ok(())
     })
     .await
@@ -424,7 +424,7 @@ async fn run_uninstall(app: AppHandle, install_dir: String) -> Result<(), String
         let _ = std::fs::remove_file(target_dir.join("sora.exe"));
         let _ = std::fs::remove_file(target_dir.join("sora-realm.exe"));
 
-        emit_progress(&handle, 100, "Sora v2.0 удалена!");
+        emit_progress(&handle, 100, "Sora v2.2 удалена!");
         #[cfg(windows)]
         {
             let uninst = target_dir.join("uninstall.exe");

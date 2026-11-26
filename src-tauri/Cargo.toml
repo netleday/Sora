@@ -1,8 +1,8 @@
 [package]
 name = "sora"
-version = "2.0.0"
+version = "2.2.0"
 authors = ["netleday"]
-description = "Sora v2.0 — osu!standard anime launcher, roulette & skin manager (by netleday)"
+description = "Sora v2.2 — osu!standard anime launcher, roulette & skin manager (by netleday)"
 edition = "2021"
 rust-version = "1.80"
 license = "GPL-3.0-or-later"

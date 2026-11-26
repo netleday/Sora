@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capabilities for Sora v2.0 Setup",
+  "description": "Default capabilities for Sora v2.2 Setup",
   "windows": ["main"],
   "permissions": [
     "core:default",

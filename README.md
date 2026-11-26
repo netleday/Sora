@@ -1,13 +1,13 @@
-# Sora v2.0
+# Sora v2.2
 
-[![Version](https://img.shields.io/badge/version-v2.0-9d4edd?style=for-the-badge)](https://github.com/netleday/Sora/releases)
+[![Version](https://img.shields.io/badge/version-v2.2-9d4edd?style=for-the-badge)](https://github.com/netleday/Sora/releases)
 [![Author](https://img.shields.io/badge/created%20by-netleday-c77dff?style=for-the-badge)](https://github.com/netleday/Sora)
 
-**Sora v2.0** — стильный чёрно-фиолетовый аниме-лаунчер и помощник для **osu!standard**, который собирает все нужные игроку инструменты в одном окне. Создан автором **netleday**.
+**Sora v2.2** — стильный чёрно-фиолетовый аниме-лаунчер и помощник для **osu!standard**, который собирает все нужные игроку инструменты в одном окне. Создан автором **netleday**.
 
 ---
 
-## Что умеет Sora v2.0
+## Что умеет Sora v2.2
 
 - **Главный экран и статистика:** вся твоя активность в osu!standard на одном экране — последняя сыгранная карта с аудио-превью, счётчик игр за текущую сессию и за неделю, подборки недавних, самых играемых и давно не запускавшихся карт.
 - **Рулетка карт:** случайный подбор карт из твоей локальной базы или напрямую из интернета с гибкими фильтрами по звёздам (SR), BPM, длине, статусу и плейстайлу.
@@ -18,13 +18,13 @@
 - **Аниме-оформление:** тёмный чёрно-фиолетовый дизайн, интерактивный аниме-маскот, звуковые эффекты и гибкая настройка фонов и прозрачности под себя.
 
 ### Установка (Windows)
-1. Скачай **`Sora-Setup-v2.0.exe`** со страницы [Releases](https://github.com/netleday/Sora/releases).
+1. Скачай **`Sora-v2.2-Setup.exe`** со страницы [Releases](https://github.com/netleday/Sora/releases).
 2. Запусти установщик, выбери папку и нажми «Установить».
 3. Открой **Sora** — приложение автоматически найдёт `osu!(lazer)` или `osu! stable`.
 
 ---
 
-## What Sora v2.0 Does (English)
+## What Sora v2.2 Does (English)
 
 - **Home & Stats:** all your osu!standard activity in one place — last played beatmap with audio preview, session and weekly play counts, plus Recent, Most Played, and Haven't Played strips.
 - **Map Roulette:** roll a random beatmap from your local library or directly online with flexible filters for Star Rating (SR), BPM, length, status, and playstyle.
@@ -35,7 +35,7 @@
 - **Anime Aesthetic:** dark black-violet theme, interactive chibi mascot, UI sound effects, and customizable backgrounds & panel opacity.
 
 ### Installation
-Download **`Sora-Setup-v2.0.exe`** from [GitHub Releases](https://github.com/netleday/Sora/releases) and run the installer.
+Download **`Sora-v2.2-Setup.exe`** from [GitHub Releases](https://github.com/netleday/Sora/releases) and run the installer.
 
 ---
 

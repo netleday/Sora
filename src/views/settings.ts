@@ -68,10 +68,19 @@ export async function loginWithOsu(): Promise<void> {
     if (!(await needOnline())) return;
     shown?.syncOnline();
   }
+  const inputVal = document.querySelector<HTMLInputElement>("#sora-osu-client-id")?.value.trim() ?? "";
+  const rawCid = (inputVal || String(store.prefs.osuClientId ?? "")).trim();
+  if (!/^\d+$/.test(rawCid) || parseInt(rawCid, 10) <= 0) {
+    toast("Укажите корректный числовой osu! OAuth Client ID (только цифры) в Настройках и укажите Callback URL: http://localhost:37281/callback", { kind: "danger", timeout: 6000 });
+    return;
+  }
+  setPrefs({ osuClientId: rawCid });
+  await api.updateSettings({ osuClientId: parseInt(rawCid, 10) }).catch(() => {});
+
   waiting = true;
   shown?.renderAccount();
   try {
-    account = await api.osuLogin();
+    account = await api.osuLogin(rawCid);
     accountKnown = true;
     toast(t("Logged in as {name}", { name: account.username }), { kind: "success" });
     void syncHistory().then((res) => {
@@ -218,10 +227,23 @@ export class SettingsView {
         toast("Фон применён!", { kind: "success" });
         return;
       }
+      if (tEl.closest("#sora-copy-callback")) {
+        void navigator.clipboard.writeText("http://localhost:37281/callback").then(
+          () => toast("Callback URL скопирован: http://localhost:37281/callback", { kind: "success" }),
+          () => toast("Скопируйте вручную: http://localhost:37281/callback"),
+        );
+        return;
+      }
       if (tEl.closest("#sora-save-client-id")) {
         const inp = this.el.querySelector<HTMLInputElement>("#sora-osu-client-id");
-        const cid = parseInt(inp?.value.trim() || "0", 10) || null;
-        setPrefs({ osuClientId: inp?.value.trim() || "" });
+        const clean = (inp?.value ?? "").trim().replace(/\s+/g, "");
+        if (inp) inp.value = clean;
+        const cid = /^\d+$/.test(clean) && parseInt(clean, 10) > 0 ? parseInt(clean, 10) : null;
+        if (!cid) {
+          toast("Client ID должен состоять только из цифр (например, 31415).", { kind: "danger" });
+          return;
+        }
+        setPrefs({ osuClientId: clean });
         void api.updateSettings({ osuClientId: cid }).then(() => toast("OAuth Client ID сохранён!", { kind: "success" }));
         return;
       }
@@ -451,7 +473,11 @@ export class SettingsView {
           <div class="setting-row">
             <div class="setting-text">
               <div class="setting-title">osu! OAuth Client ID (PKCE)</div>
-              <div class="setting-desc">Redirect URI на сайте osu!: <code>http://localhost:37281/callback</code></div>
+              <div class="setting-desc">
+                В настройках OAuth на сайте osu! укажите точный <b>Application Callback URL</b>:
+                <code style="user-select:all;">http://localhost:37281/callback</code>
+                <button type="button" id="sora-copy-callback" class="btn btn-ghost btn-sm" style="margin-left:6px;padding:2px 8px;font-size:11px;">Копировать</button>
+              </div>
             </div>
             <div style="display:flex;align-items:center;gap:8px;">
               <input type="text" id="sora-osu-client-id" placeholder="Client ID" value="${esc(p.osuClientId ?? "")}" style="width:120px;padding:7px 10px;border-radius:8px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);" />
@@ -579,7 +605,7 @@ export class SettingsView {
           ${head("about")}
           <div class="setting-row">
             <div class="setting-text">
-              <div class="setting-title">Sora v2.0 • created by netleday</div>
+              <div class="setting-title">Sora v2.2 • created by netleday</div>
               <div class="setting-desc">Твой стильный аниме-лаунчер для osu!standard: рулетка карт, удобная библиотека, история скоров, менеджер скинов, пакетная загрузка и очистка диска (<a href="https://github.com/netleday/Sora" target="_blank" rel="noreferrer">github.com/netleday/Sora</a>).</div>
             </div>
             <button type="button" id="sora-gh-check" class="btn btn-sm">Проверить GitHub (netleday/Sora)</button>

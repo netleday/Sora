@@ -3,8 +3,8 @@
   "private": true,
   "author": "netleday",
   "license": "GPL-3.0-or-later",
-  "version": "2.0.0",
-  "description": "Sora v2.0 — лаунчер, рулетка карт и менеджер скинов для osu!standard (by netleday)",
+  "version": "2.2.0",
+  "description": "Sora v2.2 — лаунчер, рулетка карт и менеджер скинов для osu!standard (by netleday)",
   "type": "module",
   "scripts": {
     "dev": "vite",
