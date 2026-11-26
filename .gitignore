@@ -1,0 +1,10 @@
+﻿node_modules/
+dist/
+src-tauri/target/
+installer/src-tauri/target/
+build_setup/
+**/bin/
+**/obj/
+*.exe
+*.spec
+.DS_Store

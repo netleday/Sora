@@ -1,0 +1,77 @@
+[package]
+name = "sora"
+version = "2.0.0"
+authors = ["netleday"]
+description = "Sora v2.0 — osu!standard anime launcher, roulette & skin manager (by netleday)"
+edition = "2021"
+rust-version = "1.80"
+license = "GPL-3.0-or-later"
+
+[lib]
+# `_lib` keeps the lib name distinct from the bin name (cargo#8519 on Windows).
+name = "sora_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+cc = "1"
+
+[dependencies]
+sha2 = "0.10"
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.40", features = ["bundled"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "bmp", "webp"] }
+thiserror = "2"
+ureq = "3"
+getrandom = "0.3"
+lzma-rs = "0.3"
+md-5 = "0.10"
+notify = { version = "8", default-features = false }
+zip = { version = "9.4", default-features = false, features = ["deflate"] }
+# without its "zip" feature: updates are the signed NSIS .exe and AppImage themselves, never archives
+# (it pulled zip 4, which has security advisories); macOS reads its .app.tar.gz without the feature
+tauri-plugin-updater = { version = "2", default-features = false, features = ["rustls-tls", "system-proxy"] }
+# pp and star ratings (src/pp.rs). A fork of rosu-pp that follows osu!'s algorithms after rosu-pp 4.0.1
+# (which is behind live for osu! and osu!taiko); back to rosu-pp once it catches up.
+rosu-pp = { package = "rosu-pp-gemini", version = "=5.0.4" }
+# heart rate monitors over Bluetooth LE (src/heart.rs); macOS needs the Bluetooth line in Info.plist,
+# Linux builds need libdbus-1-dev
+btleplug = "0.11"
+futures = "0.3"
+tokio = { version = "1", features = ["time", "net", "io-util"] }
+uuid = "1"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography", "Win32_System_Diagnostics_ToolHelp", "Win32_System_LibraryLoader", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_Threading", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# the webview's own settings (hardware acceleration); the version Tauri's wry uses
+webkit2gtk = { version = "=2.0.2", features = ["v2_40"] }
+# WebKit's inspector, for finding what's slow there (open_inspector)
+tauri = { version = "2", features = ["devtools"] }
+
+[dev-dependencies]
+flate2 = "1"
+
+# Image decoding, SQLite and JSON parsing are painfully slow unoptimised; keep dev builds usable.
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.dev]
+opt-level = 1
+# no local ThinLTO between codegen units: with opt-level > 0 and incremental builds it left
+# rebuilds after an edit unable to link (LNK2019 "unresolved external symbol anon.….llvm.…")
+lto = "off"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+strip = true
+# panics unwind, so one bad file (a chart, an image, a replay) costs only what it was for: the
+# workers catch them, and a crash at start-up can't repeat on every launch
+panic = "unwind"

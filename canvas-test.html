@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Canvas test · Fumen</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #08080b; color: #fff; font: 14px system-ui, sans-serif; overflow: hidden; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  .bar { position: fixed; top: 12px; left: 12px; z-index: 1; display: flex; gap: 8px; flex-wrap: wrap; max-width: calc(100% - 44px); align-items: center; padding: 8px 10px; border-radius: 8px; background: rgba(0, 0, 0, .75); }
+  .bar button { font: inherit; color: #fff; background: #2a2a33; border: 0; border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+  .bar button.on { background: #8b7cff; }
+  .bar .back { margin-left: 8px; background: #3a3a46; }
+  .bar .label { margin-left: 8px; opacity: .6; }
+  /* extra window-sized layers over the canvas, each composited on its own (as Fumen's fullscreen stacks them) */
+  .layer { position: fixed; inset: 0; pointer-events: none; will-change: transform; }
+  #fps { min-width: 220px; font-variant-numeric: tabular-nums; }
+  .bar .run { margin-left: 8px; background: #3d8b5c; }
+  .report { position: fixed; inset: 0; z-index: 2; display: grid; place-items: center; background: rgba(0, 0, 0, .7); }
+  .report[hidden] { display: none; }
+  .report > div { width: min(640px, calc(100% - 32px)); padding: 16px; border-radius: 10px; background: #18181f; }
+  .report p { margin: 0 0 10px; opacity: .8; }
+  .report textarea { width: 100%; height: 300px; box-sizing: border-box; padding: 10px; border: 0; border-radius: 6px; background: #0e0e13; color: #fff; font: 12.5px ui-monospace, monospace; resize: vertical; }
+  .report .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
+  .report button { font: inherit; color: #fff; background: #2a2a33; border: 0; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+  .report .copy { background: #8b7cff; }
+</style>
+</head>
+<body>
+<!-- Fumen's Linux test: how fast WebKit puts a window-filling canvas on screen, drawn every frame,
+     as a 2D canvas (what Fumen's playfield uses) or WebGL, with or without a song playing, with
+     extra window-sized layers over it or not. The same page as
+     fumen.dertesti.dev/canvas-test.html, here in Fumen's own window (Settings › Render test):
+     fast there and slow here means Tauri's window, fast in both means Fumen's page. -->
+<div class="bar">
+  <span id="fps">…</span>
+  <button data-mode="2d">2D canvas</button>
+  <button data-mode="webgl">WebGL</button>
+  <button data-size="1">full size</button>
+  <button data-size="0.5">quarter</button>
+  <button data-sound="off">no sound</button>
+  <button data-sound="audio">song</button>
+  <button data-sound="webaudio">song + Web Audio</button>
+  <span class="label">layers</span>
+  <button data-layers="0">0</button>
+  <button data-layers="2">2</button>
+  <button data-layers="4">4</button>
+  <button data-layers="8">8</button>
+  <button class="run" type="button">Run all and copy report</button>
+  <button class="back" type="button">Back to Fumen</button>
+</div>
+<div class="report" hidden>
+  <div>
+    <p data-said>Report copied. Paste it where you send it.</p>
+    <textarea readonly spellcheck="false"></textarea>
+    <div class="row"><button class="copy" type="button">Copy again</button><button class="close" type="button">Close</button></div>
+  </div>
+</div>
+<script type="module" src="/src/canvas-test.ts"></script>
+</body>
+</html>

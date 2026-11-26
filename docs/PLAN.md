@@ -1,0 +1,715 @@
+# Fumen — plan
+
+> 譜面 (*fumen*): "chart" in Japanese rhythm-game slang.
+> A desktop beatmap library for osu! — fast, beautiful, local-first — that grows into a
+> mania practice and tournament tool.
+
+## Vision
+
+osu!'s song select is built for *picking a map to play now*. Fumen is built for everything
+around that: browsing a 20k-difficulty library, understanding what a chart actually contains,
+organising it, practising with intent, and building tournament pools.
+
+Principles:
+1. **Your library, safe.** Fumen reads a copy of lazer's database. Writes into lazer (beatmap
+   imports now, collections later) run lazer's own code, only while lazer is closed, only on lazer
+   versions tested with Fumen, at exactly lazer's database schema, with a backup first.
+2. **Fast at 20k+ maps.** Everything is cached in SQLite; the UI is virtualised; a rescan of an
+   unchanged library costs nothing.
+3. **mania first, other modes welcome.** Filters and analysis lead with mania (keys, LN %,
+   patterns), but the library works for every ruleset.
+4. **Kodama design language.** Dark, calm, borderless surfaces separated by brightness steps,
+   one accent (taken from the map's background), small physical micro-animations.
+   Rules: `D:\design-language\kodama-design.md` + the forbidden list in `tracker-design.md`.
+5. **Grows in rings.** Each version is useful on its own; nothing is half-built behind a flag.
+
+## Architecture
+
+```
+fumen/
+├─ src/                 Frontend — TypeScript, vanilla (no framework), Vite
+│  ├─ styles/           tokens.css + one file per area
+│  ├─ ui/               UI kit: icons, tooltip, select, modal, toast, virtual grid
+│  ├─ views/            library, collections, settings (one module per view)
+│  └─ lib/              api (typed invoke wrappers), store, format helpers
+├─ src-tauri/           Backend — Rust, Tauri v2
+│  ├─ src/db.rs, library.rs   SQLite cache (rusqlite) and the library snapshot
+│  ├─ src/lazer.rs      lazer import (via fumen-realm)
+│  ├─ src/lazer_import.rs, downloads.rs   sets into lazer (via fumen-import), mirror downloads
+│  ├─ src/osu_auth.rs, osu_scores.rs   osu! login (through site/), osu!'s scores merged with lazer's
+│  ├─ src/chart.rs, charts.rs, analysis.rs, stars.rs, mma/   .osu parser and chart analysis
+│  ├─ src/protocol.rs   fumen:// scheme: serves osu! files by hash, with Range support
+│  └─ binaries/         built helpers (fumen-realm sidecar, fumen-import)
+├─ sidecar/FumenRealm/  .NET 8 + Realm 20.1 — exports lazer's client.realm to JSON
+├─ sidecar/FumenImport/ .NET — runs lazer's BeatmapImporter on lazer's own runtime
+├─ lazer-compat.json    lazer versions the import is tested with
+├─ site/                fumen.dertesti.dev — homepage, the osu! login's server half, /updates/ (Node, no deps)
+└─ docs/
+```
+
+**Reading lazer.** lazer stores its library in a Realm database (`client.realm`, file format 24)
+that has no Rust reader. A tiny .NET sidecar copies the file to a temp folder, opens the
+copy **read-only in dynamic mode** (schema-agnostic, so lazer updates that add fields don't break
+it), and emits one JSON document: sets, difficulties, metadata, file-hash maps, scores,
+collections. Rust ingests that into SQLite. The live database is never opened, so there's no lock or
+upgrade risk.
+
+**Writing to lazer.** Imports run lazer's own `BeatmapImporter`: `fumen-import` is started from a
+folder of hard links to the installed lazer (plus lazer's `deps.json` / `runtimeconfig.json`), so it
+runs on lazer's .NET with lazer's assemblies and reaches them by reflection — no lazer code is
+copied and nothing is pinned to a version. Guards: lazer closed (process check), version in
+`lazer-compat.json` (built-in copy + the one on GitHub), database schema exactly lazer's (lazer's
+`RealmAccess` would migrate an older file without a backup and replace a newer one), backup of
+`client.realm`. `npm run verify-lazer` tests a new lazer version end to end and lists it.
+
+**osu! login.** osu!'s OAuth needs the client secret to issue tokens and has no flow for apps that
+can't keep one, so the secret lives only on the site (`.env` on the VPS). Fumen listens on
+127.0.0.1, opens osu!'s login with the site's `/oauth/callback` as the way back and
+`<port>-<nonce>` as the state; the site forwards the browser to Fumen with the code (storing
+nothing), and Fumen trades the code (later the refresh token) for tokens at the site's
+`/oauth/token` / `/oauth/refresh`.
+
+**Files.** lazer stores files content-addressed (`files/a/ab/<sha256>`). The realm gives
+`Filename → Hash` per set, so backgrounds and audio are resolved to paths and served through
+`fumen://file/<hash>` (sniffed MIME + HTTP Range, so audio seeks).
+
+**Change detection.** Rescan only if `client.realm` mtime/size changed. Sets are upserted by
+`ID`; removed sets are deleted.
+
+## Roadmap
+
+| Version | Name | What you get |
+|---|---|---|
+| **0.1** | Library | lazer library in a fast grid/list; search; filters (mode, keys, SR, BPM, length, OD/HP, status); set page with all difficulties; local audio playback; backgrounds; lazer collections (read-only); settings (paths, accent, theme) |
+| 0.2 | Charts | `.osu` hit-object parser; mania chart preview (scrolling playfield); density/NPS graph; LN %, chord/jack/stream stats; auto pattern tags ("jumpstream", "LN", "chordjack", "tech") |
+| 0.3 | Collections | Fumen collections + smart collections (saved filters); drag & drop; export to `collection.db` (stable / Collection Manager) and to lazer (lazer closed, backup first); stable source (`osu!.db` + Songs) |
+| 0.4 | You | adding beatmaps from osu! links straight into lazer; lazer scores + osu! API v2 (OAuth); play history; per-pattern skill radar; "practice next" suggestions; goals |
+| 0.5 | Discover | **Mods in the playfield**; **similar maps**; **beatmap search on the mirrors** |
+| 0.6 | Practice | **Replays in the playfield** (lazer's, else your score on osu!); **practice mode** (A–B loop, rate ramp, metronome); **chart numbers for osu! / taiko / catch** |
+| 0.7 | Library care | **Duplicates, broken files, unplayed space hogs**; osu!stable's `scores.db` |
+| 1.0 | Release | Installer, auto-update (GitHub Releases), de/en, OLED/Light/High-contrast themes, website (macOS moved to Later) |
+| 1.1 | Play companion | **A score page after every pass** (where the accuracy went, timing, the replay, practise the worst part); **a companion window over the game** (the session, the last play, a pool to work through) |
+| 1.2 | Tournament | **Pool builder**: slots by kind (RC/LN/HB/SV/EX/TB for osu!mania, NM/HD/HR/DT/FM/TB elsewhere), SR/pp/BPM/length at the slot's mods, maps you don't own from osu! (charts off the mirrors), similar maps to fill or replace a slot, export to JSON/CSV/sheet + RPRO bot, a showcase image; **matches**: schedule, mp-link parsing + match results, picks / bans and mod strengths per player, OBS overlay served locally (pools were 0.5, tournament 0.6) |
+| 1.3 | Visualizer | **The fullscreen visualizer anew**: an analysis that reacts at once and follows each song's level, the beat and kiai from the beatmap's timing, six styles (Spektrum, Ring, Wave, Starfield, Stage, Hi-Fi), colours from the cover, everything adjustable and kept |
+| 1.4 | Live | Fumen plays along with osu! through tosu (tosu.app): **follow osu!** (visualizer opens on a map start, at the beginning; score page after a pass; closes on leaving; done 2026-11-09), **a visualizer that reacts to the play** (misses, combo, combo breaks, full combo, live acc/combo/pp), **every try counts** (fails and quits with how far and where), **practise where you failed** (one-click loop at the fail, fail heatmap on the chart), **song select on the second screen** (the map selected in osu! with patterns, dan, graph, best, SR/pp at the picked mods; built 2026-11-15: prefs followSelect, the map's page opens once song select rests on it for 350 ms, only from home, library, a collection or a map's page, replacing the page from map to map; the pp panel takes osu!'s mods, the rate follows through the player), **Discord Rich Presence** with the live play (moved from Progress; built 2026-11-15: src-tauri/src/discord.rs talks Discord's IPC itself, one update per 4.5 s at most; src/lib/discord.ts + discord-activity.ts: while playing the map +mods, live acc/combo/pp and the pulse, stars at the rate, pattern and dan on the cover's tooltip, time left, buttons Map and Fumen; song select "Picking a map"; results rank/acc/pp; without osu! Fumen's own music as Listening; Discord application "Fumen" 1571535832924295269), **tosu set up from Fumen** (detect, explain, start it with osu!), **OBS** (docs/OBS.md: the visualizer, a live overlay, a song card and a session card as browser sources; scenes switched by what osu! shows; clips of full combos and new bests from the replay buffer; built 2026-11-11, review by eye open; a judgement counter and a key overlay added 2026-11-13), **Fumen and lazer together** (from the dev build's feedback, 2026-11-13: Open in osu! through its osu:// link; downloads handed to a running lazer, which adds them itself; beatmaps added in lazer picked up by the library at once), **heart rate** (2026-11-14: Bluetooth heart rate monitors such as Moofit's; the pulse kept with every try with its average, highest, lowest and the fastest part's; on the score page, with your tries, in History's Heart rate tab and on the live overlay) |
+| 1.5 | Progress | Storyboards in the visualizer (built 2026-11-16); **HRV for every try** (built 2026-11-18, idea from Kodou: heart.rs reads the RR intervals, a try keeps them against the song in `heart_rr` with its RMSSD in `hr_hrv`; the pulse graph gets the HRV as a second curve, 30 s centred, and nerve spots where the pulse climbs 10+ bpm within 15 s while the HRV is 35 % or more under the try's median; History's Heart rate tab with the HRV overall, per day and per difficulty, passes against the rest (2026-11-23); 2026-11-20: the pulse can come from Kodou instead of the strap, picked like one, while Kodou is open and shares on 127.0.0.1:47830, so both show it); skills reworked (built 2026-11-21, the page open again: Etterna's seven skillsets and overall from MinaCalc SSRs per pass, practice by MSD, see the 0.4 notes); plays grouped into sittings (fails and retries included) and a weekly report (time, skills that moved, goals closer) (built 2026-11-23: History's Your week tab, tries from `tries_between` joined with the plays, a 30 min break starts a new sitting, a week from Monday with the week before next to it); cloud scores with replays and the map list (opt-in, free, see Later notes; moved into 1.5 on 2026-11-22; built 2026-11-23: `cloud_scores.rs` sends the own plays from `scores` and `live_plays` keyed by replay SHA-256 or a hash of the score id, the replays from lazer's files in base64 batches, the set ids as the map list (not replaced by a library under 80 % of it); the site keeps `cloud/<id>/` with scores.json, maps.json and replays/, 1 GB a player; plays from elsewhere land in `cloud_scores` and merge leaves out what the library has; cloud replays come down when opened and are kept in `cloud-replays/`; the switch, Save now, Download missing maps and Delete everything sit in Settings › osu!) |
+| Later | Ideas, no version | The playfield in step with osu!; the companion window following the pool live; Skins (browser on the same moment of a chart, side by side, mixing into one `.osk`); macOS (moved from 1.0), Linux out of testing; goals, skills and pools on fumen.dertesti.dev for the phone; mapping lens (spikes, pattern heatmap, spread check, the analyser's leftovers); skills for osu!taiko (idea 2026-11-25: nothing like Etterna exists for taiko; osu!'s own calculator splits a map into rhythm, reading, colour and stamina, rosu-pp has them, but that's per map; osu!'s four are too coarse to describe a player (speed and endurance share stamina, polyrhythms and SV have no place); the hard part is working out which skillsets taiko really has and what makes each one, then how a play's accuracy goes in, since there's no SSR. First guess, to be checked: speed/burst (short peaks: 1/4 at high BPM, 1/6 and 1/8 bursts), stamina (high density over 20 to 60 s), mono (long one-colour streams), finger control/colour (frequent irregular colour switches, worse with speed), rhythm (snap changes 1/4, 1/3, 1/6, polyrhythms, odd gaps, BPM changes), reading (SV changes, very high or low scroll, overlaps, barline tricks, HD/FL). The real problem is the playstyle: full alt, colour based, KDDK and semi alt find different patterns hard (mono and colour most of all), so a style setting or ratings per style. Finding them: run many taiko maps through a pattern analysis (density over time, colour switch rate, mono run lengths, snap changes, SV changes), see which features separate and which always come together, check with real plays (good on speed maps, bad on rhythm maps), and ask taiko players how they sort maps); a score page for osu!stable (results from tosu; moved out of 1.4 on 2026-11-15) |
+
+The public roadmap at https://fumen.dertesti.dev/roadmap (`site/public/roadmap.js`) shows this
+table; keep the two in step (and raise the `?v=` on roadmap.js / .css in roadmap.html, Cloudflare caches them). Before 1.0 is what serves the vision directly (understand a chart, organise, practise with intent);
+after 1.0 is what's nice to have around it. On 2026-10-13 the pool builder and the tournament
+tools moved after 1.0. On 2026-10-19 the versions after 1.1 were merged into fewer, bigger ones: the
+roadmap runs to 1.3 (1.2 Tournament, 1.3 Progress), the rest waits under Later without a number,
+so a minor version means a real step. On 2026-10-21 the visualizer became 1.3 (people found it
+boring, not adjustable, not good-looking and "not reactive enough"); Progress moved to 1.4. On 2026-11-09 1.4 became Live (everything tosu makes possible, after "follow osu!" worked); Progress moved to 1.5. Fumen is an alpha (website, README). Within a version, the order of the
+sections below is the order of the work.
+
+## v0.1 — detailed scope
+
+**Backend**
+- [x] Tauri v2 app `dev.fumen.app`, own window controls, single window, min 1000×640
+- [x] Settings in app config dir (lazer data path auto-detected at `%APPDATA%\osu`, `storage.ini` relocation); stable path comes with 0.3
+- [x] Sidecar `fumen-realm.exe export <realm> <out.json>` (self-contained single-file, trimmed to ~13 MB)
+- [x] Scan job: copy → export → ingest in one SQLite transaction; progress events to UI; auto-rescan when lazer changed
+- [x] Schema: `sets`, `maps`, `scores`, `lazer_collections`, `lazer_collection_items`, `meta` (migrations via `user_version`)
+- [x] Library snapshot: the whole library as compact JSON in one IPC call; the UI filters/sorts in memory (typing never waits on IPC)
+- [x] `fumen://` protocol for file hashes (images + audio, Range) and cached JPEG thumbnails
+
+**Frontend**
+- [x] Shell (Kodama layout): full-height sidebar with search, Home/Library, collections box, profile; floating window controls; player under the content
+- [x] Home: greeting, shelves (recently played / added, most played, haven't played in a while), quick picks panel
+- [x] Library: virtualised cover grid + set list (sets open to show their difficulties); osu!-style query language (keys, sr, bpm, length, od, status, grade, played, …); mode + key-count chips; star range / status / played filters; sort
+- [x] Set view: large background, ambient blur, difficulty table (keys, SR colour, OD, HP, notes, LN %, length), play preview
+- [x] Player: songs from the beginning, queue from the list you played from (shuffled by default), repeat, seek, volume, media keys; accent from current cover
+- [x] Collections view (lazer, read-only)
+- [x] Settings: paths, rescan, auto-rescan, accent (dynamic / fixed), theme, ambient, original-language metadata, reduced motion
+- [x] Empty / first-run state: detect lazer, one-click first scan with progress
+
+**Done when:** first launch → auto-detect → scan of 21k maps completes in < 30 s; filtering
+"7K, 4–5★" is instant; preview audio plays; nothing looks AI-generated.
+
+## v0.2 — charts (in progress)
+
+- [x] `.osu` parser (Rust): timing points, hit objects incl. slider/hold ends, breaks, kiai; tolerant of old formats
+- [x] Analysis: density per second, peak (densest 2 s), longest burst; mania: rows/chords, jacks, LN coverage,
+      one-second windows classified as stream / jumpstream / handstream / chordjack / jacks / LN; tags ≥ 15 % + stamina
+- [x] Library-wide cache `chart_stats` keyed by `.osu` hash, background job after imports and on start (~10 s for 22k charts
+      with the dan rating and pattern report, ~2 s without)
+- [x] Chart panel on the set page: density graph with seek, stats, patterns, chords, columns
+- [x] Fullscreen player over the app window (from the player bar or the panel), playfield laid out in
+      lazer's 768-unit stage space so it scales uniformly: visualizer (art + Web Audio frequency bars)
+      or the playfield at full height with live NPS / pattern / BPM / notes and the density graph;
+      scroll speed and direction imported from lazer's `RulesetSetting`s (time = 11485 ms / speed,
+      × rate), F3 / F4 override stored in Fumen only
+- [x] Search: `pattern=…` (with short forms js/hs/cj), `peak`
+- [x] Pattern tags and peak in the library table, sort by peak
+- [x] Rate-adjusted view: HT / DT presets and 0.5×–2× in 0.05 steps, shared with the player (like
+      lazer's rate mods); stats, times, BPM and star rating at the rate
+- [x] osu!mania star rating at any rate (port of lazer's strain calculator, checked against lazer's
+      stored values: 99.8 % within 0.005★); HT/DT cached per chart, search `dt>…` / `ht<…`
+- [x] Playfield in lazer's skins: every skin of the lazer library (imported with it), lazer's own
+      argon / argon pro / triangles / classic / retro and legacy `.osk` skins drawn like lazer's
+      mania components (skin.ini [Mania] per key count, @2x, animations, classic fallback), autoplay
+- [x] Hitsounds in the playfield, resolved like lazer (banks, custom indexes, per-note files,
+      storyboard samples; the set's own samples, then the skin's), with their own volume slider;
+      Ogg-in-WAV and ADPCM keysounds decoded too (GSM WAVs stay silent)
+- [x] Pattern report and dan rating, ported from ManiaMapAnalyser (MIT, `src-tauri/src/mma`):
+      Interlude-style pattern clusters (core + specific patterns, speed, category, RC / LN / HB / Mix,
+      SV), Azusa's dan for 4K rice (with Daniel and Sunny), Sunny on the 4K / 6K / 7K / 10K dan
+      tables otherwise; checked against the analyser's own JS on 420 charts (same dans, star
+      ratings within 1e-14). Dan in the chart panel at any rate, in the set and library rows,
+      search `dan=gamma`, `dan>=13`, `category=…`
+- [ ] Azusa's marathon correction (needs Etterna's MinaCalc), the analyser's Roxy / Mixed estimators
+- [x] osu!taiko playfield: the chart converted like lazer's TaikoBeatmapConverter (rolls, swells,
+      strong notes, scroll speed per timing point, bar lines; `src-tauri/src/taiko.rs`, checked on
+      7071 charts), lazer's autoplay (alternating hands, strong hits with both, roll and swell
+      timing), TaikoPlayfield's layout and scrolling; argon / argon pro / triangles (lazer's drum
+      textures, extracted with the hit sounds) and legacy skins over classic (LegacyInputDrum,
+      LegacyCirclePiece, LegacyDrumRoll, LegacySwell, LegacyTaikoScroller, pippidon);
+      DrumSamplePlayer's sounds (strong second sounds, taiko- lookups, argon's volume banks and
+      flourishes)
+- [x] osu! playfield: the chart read like lazer (stacking, slider paths and ticks, spinners;
+      `src-tauri/src/osu.rs`), OsuAutoGenerator's cursor, the playfield's timing (approach, snaking,
+      follow points, spinner spins and SPM); argon / argon pro / triangles / legacy skins (circles,
+      bodies, balls, follow circles, reverse arrows, spinners old and new, cursor and trail); slider
+      ticks, slides and spinner spins / bonuses as lazer plays them
+- [x] osu!catch playfield: CatchBeatmapConverter (juice streams with their tiny droplets, banana
+      showers, osu!stable's random offsets), hyperdashes and CatchAutoGenerator
+      (`src-tauri/src/catch.rs`); the catcher's plate, dash / hyperdash trails and after-images,
+      hit explosions; argon / triangles / legacy skins (fruit textures, LegacyCatcherNew / Old);
+      fruits' own sounds, droplets' slider ticks, bananas' rising pitch
+- [x] "tech" detection: the pattern report's "Tech" (mixed speeds) and SV
+
+## v0.3 — collections
+
+- [x] Fumen collections: own tables (migration 11, `src/collections.rs`), difficulties by MD5 (ones
+      not in the library kept and counted), resolved to library ids for the UI; make / rename /
+      delete, add and take out from row menus, drag & drop from the library onto the sidebar (or its
+      + for a new one); lazer's collections read-only below them, copyable into Fumen
+- [x] Smart collections: the library's filters (text query, ruleset, keys, stars, status, played,
+      hidden) saved as JSON in `collections.query`; members computed in the UI with the library
+      search (cached per snapshot), so they follow every import; can't take maps by hand; Edit
+      search loads them into the library with Save search / Done
+- [x] Export: into lazer via `fumen-import collections` (lazer's RealmAccess.Write on its
+      BeatmapCollections; lazer closed, tested versions, schema guard, backup first; matched by the
+      remembered lazer id (migration 12, also set by "Copy into Fumen"), else by name, else new;
+      verify-lazer checks it) and to a stable `collection.db` (written in Rust, via a temp file)
+- [x] stable as a source (`src/stable.rs`): osu!.db read in Rust (every version since 2014,
+      entry sizes before 20191106, float star ratings since 20250107), backgrounds from each
+      chart's [Events], sets with `source = 'stable'`; files get keys from path + size + mtime
+      (`stable_files`, migration 13) that the file resolver (`paths::Files`) serves next to lazer's
+      hashes, so covers, audio, charts, analysis and hit sounds work unchanged; collection.db as
+      "In osu!stable" collections (copyable into Fumen); lazer's copy of a difficulty wins in the
+      snapshot; rescans skip stable while osu!.db is unchanged. Scores (scores.db): later
+
+## v0.4 — you
+
+- [x] Adding beatmaps: osu! links (set / beatmap pages, `osu://`, IDs) → set IDs (beatmap links via
+      the mirrors' beatmap lookups) → `.osz` from mirrors (checked to be a whole zip) → lazer's own
+      import (see *Writing to lazer*) → library rescan; sets already there skipped; per-line
+      progress, retry of failed lines; paste anywhere in the app
+- [x] Mirrors (0.4.9): nothing is ever fetched from osu!'s servers (IP-ban risk). Six mirrors
+      (osu.direct, nekoha.moe, catboy.best, beatconnect.io, sayobot.cn, nerinyan.moe) share a pool:
+      each set goes to the least busy, least used one (at most 2 downloads per mirror); 429 rests a
+      mirror for its `Retry-After`, errors rest it 20 s doubling, three 403s in a row 5 min; a set
+      waits ("held", with a countdown) for a mirror that may still have it, up to 20 min. User
+      agent without a URL (catboy.best refuses those). osu.direct allows 200 downloads per hour and
+      8 GiB a day per IP; its API keys (`x-ratelimit-key`, raised API limits) aren't public
+- [x] After each import, what lazer's BeatmapUpdater does (0.4.9): metadata from lazer's local
+      `online.db` only (used only when it's younger than a month, else lazer's code would download
+      it), star rating, length, BPM, object counts — lazer's importer leaves that to the game, so
+      sets showed as unknown with 0 BPM. `import --repair` finishes sets imported without it
+      (first batch of every run, and "Finish them" in Add beatmaps); verify-lazer checks both
+- [x] Maps you've played: every set from osu!'s play counts (`most_played`, all pages), top plays
+      (200 per ruleset) and the synced scores the Performance view shows, minus what lazer has
+      (`find_played_sets`); the import runs three downloads at once next to lazer's importer in
+      batches of 20 (one backup, one importer start each; at most 40 sets wait on disk), can be
+      stopped (the batch in lazer finishes, the rest is left out), and stops by itself when lazer
+      is opened. Cards with set covers, a bar along each card, a sweep while lazer imports,
+      overall counts; the list follows the sets on their way
+- [x] Tested-version list `lazer-compat.json` + `npm run verify-lazer` (schema guard both ways,
+      fresh-library import twice, import into a copy of the real library: +1 set, all else identical,
+      every file's hash checked)
+- [x] 1× star rating from Fumen's calculator for difficulties lazer hasn't rated yet
+- [x] osu! API v2 login: Fumen's OAuth app (client 71003), the secret only on fumen.dertesti.dev
+      (`site/`); login in Settings with profile, rank and pp; tokens renewed through the site
+- [x] fumen.dertesti.dev: "upcoming project" placeholder, systemd service on the VPS, deploy script
+- [x] The site live (domain on Cloudflare, tunnel route, secret set); login checked end to end
+- [x] Scores and play history: osu!'s top plays (200 per ruleset), recent plays (24 h, fails too),
+      per-ruleset stats and most played into their own tables (`osu_scores.rs`, a library rescan
+      never touches them); merged with lazer's local scores (same online id; stable scores by
+      difficulty, time and accuracy); only the player's own scores (the logged-in account, else
+      lazer's most frequent player). Sync at start (if older than 10 min), after login, by hand;
+      per difficulty on its set page. History view (stats, activity, recent / top / most played);
+      the library's best per difficulty includes osu!'s scores
+- [x] Skill radar (osu!mania, per key mode): the analysis' pattern shares go into the library
+      snapshot; a play is worth its chart's star rating at the rate played (Fumen's calculator for
+      rates the library has none for, cached in `rate_stars`) at 96% along osu!mania's pp curve;
+      skill = share-weighted average of the five best charts with ≥ 15% of the pattern (fewer:
+      "a guess"); now vs 90 days ago; the charts behind every number (`src/lib/skills.ts`)
+- [x] "Practice next": per pattern, weakest first, charts in the library with ≥ 15% of it whose
+      star rating lands 2–12% above the skill, at 1× or at the rate (0.75×–1.5×, where the
+      library's ratings hold to ~0.02★) that gets them there; heavy shares first, then closeness,
+      new charts and 1× before replays and rates; one difficulty per set, each chart once; with
+      the skill a 96% pass would give
+- [x] Goals: skill (pattern + key mode), chart (accuracy at a rate or faster, fair passes), osu!
+      pp/rank per ruleset; stored as JSON in `goals` (migration 10, `src/goals.rs`), measured in
+      `src/lib/goals.ts`, reached ones marked with the time and a toast (`lib/goals-store.ts`)
+- [x] Reworked in 1.5 (2026-11-21): every osu!mania pass (4K to 7K, no mods that change the chart)
+      gets a Wife% from its judgements (`src-tauri/src/wife.rs`: a bell curve of timing errors
+      fitted to the counts in lazer's windows, Wife3 averaged along it) and its SSR from MinaCalc at
+      that Wife% and rate (`msd.rs`, cached in `play_ssr`). Skills are Etterna's seven skillsets,
+      each its `aggregate_skill` over the best play per chart and rate (×1.05), overall over the
+      seven (×1.125; matches mania-tracker's overall to 0.02 on its own numbers). Practice aims
+      1–10% above the average of the five best plays in a skillset, with charts whose MSD there
+      (0.7×–2.0× in `chart_stats.msd_rates`, analysis version 5) is at least 93% of their hardest
+      skillset. Pattern-share skill goals are kept in the table but no longer shown.
+      2026-11-22: plays Fumen saw happen (`live_plays`) join the history until lazer's scores
+      have them (same difficulty, within 2 min and 0.05% accuracy), and the history reloads on
+      every `live-play`, so a pass counts at once; the score page shows the skills it raised
+      (just before against just after); a graph per row on the Skills page (its button, closed by default): overall or a
+      skillset day by day (`skillHistory`, sorted values kept as plays come in), 90 days / year /
+      all; "N plays carry it" per skillset. Farm maps: a notes key per chart (`msd::notes_key`,
+      FNV-1a over the key count and the rows, analysis version 6) makes rate edits and copies one
+      chart; as in Etterna (`ScoresForChart::SetTopScores`) a chart counts with its best two rates
+      (mania-tracker does the same per "chart family"). You can leave a chart out by hand (UI pref
+      `skillsLeftOut`, by notes key; out of skills, history, goals and practice, listed with "Count
+      again"), and a pass worth more than 1.12× the skill once 25 passes are rated is marked as
+      looking overrated (real best plays sit within about 1.09×), on the Skills page and the score
+      page. Vibro (`src-tauri/src/vibro.rs`, ported from mania-tracker's algorithms/vibro, MIT):
+      every pass is checked at its rate from the notes alone; small vibro parts are cut before
+      MinaCalc rates the rest (accuracy loss all on what's left), otherwise the pass is "vibro" or
+      "unrateable" and doesn't count (`play_ssr.vibro`, SSR version includes `vibro::VERSION`).
+      The 1× verdict sits in `chart_stats.vibro` (analysis version 7) and keeps those charts out
+      of practice. On the user's library (4989 charts): 44 caught at 1× (a vibro anthology, a meme
+      pack, isogu's rate edits), 131 at 1.5×; ~1 ms a chart and rate
+- [x] Compare skills with another player (0.4.10, `src-tauri/src/player.rs`, `lib/compare.ts`):
+      osu! API with the logged-in token (user by name, top 200, firsts, recent passes, most
+      played → up to 60 best-score lookups; one request at a time, 350 ms apart), charts from the
+      library or single `.osu` files from osu.direct / nekoha / catboy (cached by id + md5,
+      dropped after 60 days), analysed like the library's (shares, Fumen's 0.75× / 1.5× / played
+      rates; osu!'s 1× rating); skills worked out by the same lib/skills code
+
+## v0.5 — discover
+
+- [x] Mods in the playfield (first: the pool builder shows a slot the way it plays) — 0.4.12.
+      `src-tauri/src/mods.rs` + `parse_with` in osu.rs / catch.rs / taiko.rs build the chart with
+      Easy / Hard Rock (CS, AR, OD; osu! flipped vertically, osu!catch's `applyHardRockOffset`,
+      osu!taiko's slider multiplier ×1.4·4/3 or ×0.8) and Mirror (osu! horizontally, osu!catch after
+      the processor, osu!mania's columns in `chart_json`); `get_chart` takes them. `src/lib/mods.ts`:
+      each ruleset's mods, lazer's incompatibilities, the adjusted CS / AR / OD / HP (rate-adjusted
+      AR / OD like lazer's song select), which star ratings still hold (osu!mania's always; others
+      only lazer's, without difficulty mods). The playfields draw Hidden (osu!: no approach circles
+      but the first object's, 0.4 / 0.3 fades, slider bodies over their length; osu!catch: 0.6 / 0.44
+      fade, nothing on the plate; osu!taiko: fading over the first 0.375 of the way; osu!mania:
+      the combo-grown cover from the hit line, Fade In from the top, notes drawn into a layer of
+      their own) and Flashlight (`src/ui/flashlight.ts`: sizes by combo and break time at
+      osu!stable's speed, the circular / rectangular shaders). Mods are the player's, like the rate
+      (session only); the fullscreen player has a toggle per mod
+- [x] Similar maps — 0.4.13. `src/lib/similar.ts`: a fingerprint per difficulty (SR, notes per
+      second, length, BPM, hold share; osu!mania's pattern shares, osu! / osu!catch AR and CS,
+      OD where it counts), each part a difference in noticeable units weighted per ruleset, alike
+      = 1 / (1 + weighted mean square); same ruleset and key count, never the chart's own set, a
+      chart uploaded twice (osu!'s id, or song title + difficulty name) once; ~7 ms over 22k
+      difficulties. The chart panel lists the closest (`src/views/similar.ts`, "Similar maps" in
+      every difficulty's menu jumps there), each with what sets it apart. Comparing, "Practice
+      next" adds the compared player's charts at your aim (`suggest` over their charts, your
+      bests mapped through the library) and, for ones you don't have, what's like them in yours.
+      Later: "replace this slot with something like it" in the pool builder (1.2)
+- [x] Beatmap search on the mirrors — 0.4.14. `src-tauri/src/mirror_search.rs`: osu.direct's
+      `/api/v2/search` (Meilisearch: text plus `[beatmaps.cs = 4 AND beatmaps.difficulty_rating
+      >= 5]` filters, sorts on `ranked_date`, `play_count`, `favourite_count`,
+      `beatmaps.difficulty_rating`, `last_updated`; 120 requests a minute), else catboy.best's
+      (text, ruleset, one status; its own order). The filters hold per set, so every difficulty is
+      checked again and sets without one that fits all of them are left out (nerinyan was down
+      when this was built). `src/views/browse.ts` (sidebar › Browse): words, ruleset, keys,
+      status and star range (the library's controls; `src/ui/star-range.ts` shared), pages on
+      scroll, the fitting difficulties as chips, all of them on a click, previews from catboy.best
+      / osu.direct (`media-src` allows both), "In library", Add, and "Add all" for a whole search
+      (the "pack"). Adding goes through Add beatmaps' import; sets added while one runs wait in
+      its queue (`importSets` in views/import.ts) and each row follows its set along. Covers
+      come from osu!'s image CDN like Compare's
+- [x] Collections in the cloud — 0.4.16. `src-tauri/src/cloud.rs` gathers every collection (Fumen's
+      with MD5 + osu! ids, smart ones as their query, lazer's / stable's) and PUTs it to
+      `/api/collections` on the site, which checks the Bearer token against osu!'s `/me` and keeps
+      `cloud/<osu id>.json` (one file per player, replaced on each save). Getting them merges by
+      name, never takes anything out, and lists the sets it lacks for Add beatmaps' import
+
+## v0.6 — practice
+
+- [x] osu!mania replays from lazer in the playfield — 0.5.2. The sidecar exports each score's
+      replay file (its hash in lazer's files/; `scores.replay`, migration 14). `src-tauri/src/replay.rs`
+      lists a difficulty's scores with one and reads the `.osr` (header, LZMA frames via lzma-rs,
+      frames as lazer's LegacyScoreDecoder reads them). `src/lib/replay.ts` judges it like lazer:
+      ManiaHitWindows (OD range or Classic, × rate, ÷ 1.4 with HR), notes in order per column,
+      holds by DrawableHoldNote (head, hold, tail by release ÷ 1.5, Meh cap after a miss or
+      break, passive misses), Hold Off; Random / Invert / key mods aren't replayed. Checked against
+      675 of the user's replays: scores since lazer's 2025 window change come out at lazer's counts
+      (exactly or within a judgement or two of rounding), older ones were judged with older windows.
+      The playfield takes a `ManiaPlay` (autoplay or the replay): keys, explosions, what's gone,
+      what's held, and the judgement (all six results, argon / triangles text, legacy hit0–hit300g).
+      `src/views/replay-panel.ts`: "Played by" picks one (its rate and drawn mods with it); the
+      accuracy and counts so far, an error bar with lazer's windows, misses on the density graph
+      and a jump to each
+- [x] The player's scores on osu! when lazer has no replay — 0.5.4. "Find your replays on osu!" in
+      Played by: one request (`/beatmaps/{id}/scores/users/{user}/all`), lazer's own left out;
+      picking one downloads its replay (`/scores/{id}/download`, one at a time) into
+      `<data>/replays/<id>.osr`, read from there after. Replays only, never beatmap files
+- [x] osu!taiko replays — 0.5.5. `src/lib/taiko-replay.ts` judges them like lazer: TaikoHitWindows
+      (Great / Ok / Miss from OD, floored less half a millisecond), the keys from the legacy
+      buttons (FromLegacy's order), each press going to the objects earliest first the way lazer's
+      input queue does (a note in its miss window takes it, the wrong colour misses, a note pressed
+      in the frame swallows the frame's other keys), strong notes' second key within 30 ms while
+      the first is down, drum roll ticks within half their spacing (`spacing` in the chart now),
+      swells alternating from their start; Relax. Random / Swap / Simplified Rhythm / Single Tap
+      aren't replayed. Checked against 708 of the user's replays: since mid-2025, 681 of 686 come
+      out at lazer's Great / Ok / Miss exactly (the rest a note or two off), the bonus counts but
+      for a second key at exactly 30 ms. Swells now ask for the hits of the beatmap's own OD, as
+      lazer converts before Hard Rock / Easy. The playfield draws what was played (TaikoChart's
+      timeline: autoplay or the replay): the drum, hits flying up when they were hit, misses
+      scrolling on and fading, explosions and judgements per result in all three skins (legacy
+      taiko-hit100 / hit0, the "k" sprite once the second key lands), drum roll ticks in the
+      colour that hit them, pippidon failing after a miss
+- [x] osu! replays — 0.5.6. `src/lib/osu-replay.ts` judges them like lazer: OsuHitWindows
+      (Great / Ok / Meh from OD, floored less half a millisecond, a press up to 400 ms early a
+      miss), a press going to the earliest circle under the cursor, note lock
+      (StartTimeOrderedHitPolicy), sliders followed while a button is down and the cursor within
+      the ball (2.4× once following; only the head's key while the other was down), ticks and
+      repeats at their time, the end 36 ms early, a late head taking the ticks it passed, spinners
+      as SpinnerSpinHistory counts the turns (× the rate), and the moments between replay frames
+      that count. Relax, Autopilot, Classic and the mods that move objects aren't replayed.
+      Checked against 35 of the user's replays: 32 come out at lazer's counts exactly, the rest
+      from mid-2025 (older windows); long spinners can come out a bonus spin or two short (the
+      game saw every mouse movement, a replay keeps 60 a second). The playfield plays the replay:
+      its cursor, circles hit when they were (missed ones fading), judgements in all three skins
+      (argon's rings, classic's hit300 / 100 / 50 / 0), ticks missed turning red, the follow
+      circle only while followed, spinners turned by the replay
+- [x] osu!catch replays — 0.6.0. `src/lib/catch-replay.ts`: the catcher at the replay's x
+      (straight between frames, dashing on the left button), every object judged at its time,
+      caught within half the catch width (Catcher.CanCatch); fruits Great / Miss, droplets large
+      ticks, tiny droplets small ticks, bananas bonus; accuracy counts every fruit, droplet and tiny
+      droplet the same (CatchScoreProcessor). Checked against the user's two catch replays: fruits
+      and droplets exact, tiny droplets two off (within a pixel of the edge). The playfield plays
+      the replay: CatchChart.setPlay takes its frames and what it caught — missed objects fall on
+      past the catcher, fading, stay off the plate, the catcher fails until the next catch, the
+      combo's plate falls off (Drop) when its last is missed, hyperdashes only from hyper fruits
+      caught. The panel counts fruits, droplets and misses, without the error bar (catching is
+      where, not when). With this, every ruleset has its replays: 0.6 is done
+- [x] Practice mode — 0.4.17. `src/views/practice.ts` beside the fullscreen playfield: a drag on
+      the density graph picks the part (snapped to beats; a click still seeks), "Hardest part"
+      takes the densest 16 s from a bar's start (`hardest` in lib/practice.ts; with a pattern, its
+      seconds count fully and the rest 0.3), and the song goes back 1.5 s before A on reaching B.
+      Speed up: from 0.20× under the rate you had, +0.05× each time round, up to it. The metronome
+      ticks on the uninherited timing points (higher on bars), scheduled on the song's Web Audio
+      clock like the hitsounds. Parts are kept per difficulty in localStorage. Right-click a
+      difficulty › Practice the hardest part; from Practice next with that group's pattern and rate
+- Dropped: chart numbers for osu! / taiko / catch. Fumen's own counts (0.4.18) came out again in
+      0.5.0: no maintained analyser for those rulesets exists (Mapperator searches patterns,
+      Simple Beatmap Analyzer and osustreams count 1/4 runs), and home-made heuristics aren't
+      worth showing next to ManiaMapAnalyser's report. The panel and the fullscreen side show
+      pattern numbers for osu!mania only
+
+## v0.7 — library care
+
+- [x] What the library takes on disk — 0.6.1. The realm export lists every file of a set ([name,
+      hash], `sets.files`, migration 15, with lazer's set hash); `src-tauri/src/care.rs` adds up
+      their sizes (each hash stat'ed once and kept in `file_sizes`: lazer's files are
+      content-addressed, so a size never goes stale — 98k files take 3 s the first time, then
+      0.25 s) by kind (the song a difficulty plays, videos, images, hitsounds, other); stable's
+      sets are their folders in Songs (`sets.folder`), walked each time. The Library care page
+      (`src/views/care.ts`): on disk (shared files once), never played, videos, not played in a
+      year; where it goes by kind of file, ruleset or status; the sets never played, the biggest
+      and those not played in a year, biggest first. On the user's library: 39.1 GB, 13.8 GB of it videos
+- [x] Duplicates — 0.6.2. `care::duplicates` links sets (union–find) by a difficulty they share
+      (its MD5), their osu! id, or the same mapper + title + song file (lazer's song hash; stable's
+      files go by path, so only lazer's compare). Each group is named by its closest link:
+      osu!stable's copy of lazer's sets (every stable MD5 in lazer too), the same set more than
+      once, difficulties in common (a pack and a set), or a re-upload. The Duplicates tab shows
+      the groups newest first, sorted by what could go (stable's copy, or all but the newest).
+      On the user's library: 2 stable copies, 1 pack, 2 re-uploads
+- [x] Missing or broken audio / backgrounds — 0.6.3. Each difficulty keeps the song and background
+      its chart names (`maps.audio_file` / `bg_file`, migration 16: lazer's from the realm, stable's
+      from osu!.db and the chart's [Events]); `care.rs` flags one named but not in the set, or there
+      but not audio / an image by its first bytes (`sniff`: magic numbers, and an MP3 after junk by
+      two MPEG frames in a row within the 16000 bytes BASS looks at; lazer's results kept by hash in
+      `file_formats`), plus files lazer lists that are gone from its storage. "virtual" (a chart
+      without a song, on purpose) isn't missing. The Broken files tab: per set, what and for how many
+      difficulties. On the user's library: 6 songs and 3 backgrounds named but never in their (pack)
+      sets; a Unity asset named STORIA.mp3 plays (an MP3 inside, in reach of BASS), so it's fine
+- [x] "Clean up" lists that hand the deletion to lazer (never deleting itself) — 0.6.4. Sets are
+      picked on the Library care lists (one by one, all never played / not played in a year, a
+      duplicate's older copies) and deleted with lazer's own Delete: `fumen-import delete` sets
+      the set's DeletePending in lazer's write transaction (ModelManager.Delete; protected sets
+      stay), with the import's checks (tested lazer version, lazer closed, exact schema, a
+      `client.realm` backup). Verified on a copy of the user's library (`verify_installed_lazer`
+      step 5): the sets leave the export at once; lazer's RealmAccess removes them and their files
+      for good the next time the database is opened (no undo — lazer's own restore only works
+      within its session), and every score stays. osu!stable's sets are never picked.
+      0.7.1: everything goes through one delete window (`src/views/delete-window.ts`: the sets,
+      their size from the shared care report `lib/care-data.ts`, lazer's state polled, a note on
+      what lazer will do); afterwards the rows turn to white smoke in a wave (`ui/dissolve.ts`:
+      a left-to-right mask wipe per row with particles rising off its edge, on a canvas over the
+      window; reduced motion just fades) and what happened shows where they were — the window
+      never changes size. Ways in: Library care's Clean up menu (every set of a ruleset or status,
+      never played, not played in a year, duplicates' older copies), the trash button on a
+      ruleset's or status's part of "Where it goes", the picked sets, the library's "sets shown
+      here" menu (whatever the filters and search show; also Add all to a collection) and a set's
+      own menu
+- [x] osu!stable's `scores.db` into the play history — 0.7.0. `stable::read_scores_db` (versions with
+      4- and 8-byte score ids, target practice's extra value); each play goes into `scores` as lazer
+      would keep it (id "st-<replay md5>", accuracy and grade by stable's rules per ruleset, silver
+      with HD/FL (mania FI), judgement counts and mods as lazer's legacy import names them, plus
+      Classic). lazer's import keeps them; a changed scores.db re-reads stable. The history counts
+      them as the account's when lazer knows the name under its id (old names too), and leaves out
+      the ones lazer imported itself (same difficulty, within 2 s). On the user's PC: 3 plays,
+      two under an earlier name — all three in the history
+
+## v1.0 — release
+
+- [x] Installer and auto-update — signed updater on GitHub Releases, `npm run release`
+- [x] Dark, OLED, Light and High contrast — 0.7.2. Light follows Kodama's light palette (grey base
+      #f0f0f0, white surfaces, black text by opacity .90/.56/.38/.20, darker status colours, half
+      the shadows). Surface tints go through `--ink` (rgb channels: white on the dark themes, black
+      on Light), so the same rules serve every theme; the accent's ink (accent as text) is derived
+      dark on Light (`deriveAccent(color, light)`). The fullscreen player stays a dark stage and
+      gets the dark tokens back (`:root[data-theme="light"] .fs`); the set hero gets a light scrim
+      and dark text; the delete smoke is dark on Light. High contrast works on top of Light too
+- [x] English and German — 0.7.4 to 0.7.9. The system (`src/lib/i18n.ts`: `t("English text")`
+      with `{name}` placeholders, `tn(n, one, other)` for counts; German in `src/locales/de/*.ts`, keyed
+      by the English; `i18n.test.ts` fails on any text without German or German without a text),
+      numbers, dates and relative times by language, the language in Settings › Appearance (kept in
+      localStorage as well, so it is known before anything renders; switching reloads the window).
+      Every view in German, then (0.7.9) what the Rust side says: errors, lazer's state and import
+      rows stay English in Rust and `fromRust()` finds their German (`src/locales/de/rust.ts`, by
+      pattern where Rust fills something in; the test checks it against src-tauri's source). Fumen
+      starts in the system's language (German or else English) until one is picked. Game words
+      stay as osu! says them (judgements, mods, pattern names, dan names)
+- [x] A website with downloads — fumen.dertesti.dev: what Fumen does, five looping scenes drawn
+      in the page (`site/public/home.js`: each a pure function of time, so the loop never jumps; they
+      run only on screen and hold one frame with reduced motion), and the download buttons, which
+      `/download/info` and `/download/<windows|mac-arm|mac-intel>` point at the newest files in the
+      updates folder. A Mac visitor gets the macOS build first
+
+## v1.1 — Play companion
+
+Fumen while you play: lazer saves every pass with its replay, and the replay lands in lazer's
+files/ as an `.osr` (named by its SHA-256). Fumen watches that folder (`src-tauri/src/live.rs`, the
+`notify` crate) and reads each new one that's from the last ten minutes: the difficulty by MD5, the
+judgement counts, the mods with their rate and lazer's rank are all in lazer's part of the file
+(`LegacyReplaySoloScoreInfo`). No database is opened and nothing of the running game is touched.
+The accuracy from those counts matches lazer's own on 600 of 600 real scores (`live::real`).
+
+- [x] Plays as they happen: `live_plays` (migration 17), event `live-play` to every window
+- [x] Score page (`views/score.ts`): grade, accuracy against the best before it, the judgements;
+      the replay judged the way lazer judges it (`lib/score-review.ts` on lib/replay and the other
+      rulesets'): the accuracy lost per second over the song's density, the worst stretches (up to
+      4 s, at least 2.5× an even share) with osu!mania's pattern names, the timing (mean error, UR,
+      early / late, an offset hint from 5 ms); watch the replay, practise a stretch (the practice
+      loop takes a part now), try a rate (osu!mania), add to a collection, similar maps; the session's
+      other plays. With Fumen behind the game the page is waiting; in front, a toast offers it
+- [x] Companion window (`companion.html`, `src/companion.ts`): 248 wide, as tall as what it shows
+      (`fit_companion`, the bottom edge stays), transparent around its panel, on top, bottom right
+      of the main screen, no taskbar entry; with the cursor over it clicks go through to the game
+      and the panel fades, Ctrl makes it clickable (lib.rs `see_through`; made in an async command,
+      a synchronous one deadlocks on Windows); the session (plays since the last hour-long pause: count,
+      time, mean accuracy, new bests), the last play (a click shows its score in the main window),
+      and a pool: a collection (Fumen's own, lazer's or stable's; not smart ones) ticked off as its
+      difficulties are passed this session, with the best accuracy now and ever. Shows over lazer
+      in borderless or windowed mode. Settings › While you play
+- [x] Imports into osu!stable (1.1.2): the one exception to "never writes stable's files", opt-in
+      behind Settings › osu!stable › ⋮ (a warning, then typing "stable"; `settings.stableImport`,
+      checked in Rust too). Add beatmaps gets an osu!lazer / osu!stable switch (one more warning a
+      session), Browse follows it; downloaded sets go into stable's Songs folder as `<set id>.osz`
+      (`stable_import.rs`: copied as `.fumen-part`, then renamed; never replaces a file), stable
+      imports them on its next start
+- [x] pp for every difficulty (1.1.5): a Performance block in the chart panel (`src/views/pp.ts`,
+      `src/lib/pp.ts`, `src-tauri/src/pp.rs`). The most a play gives at the picked mods (EZ, NF,
+      HR, HD, FL; HT/DT are the player's rate) with the star rating, 99/98/97/95%, a play typed in
+      (osu!mania Great/Good/Ok/Meh/Miss, osu! Ok/Meh/Miss + combo, osu!taiko Ok/Miss, osu!catch
+      misses + tiny droplet misses) and a graph with a line per judgement through that play; a
+      drag along a line sets its count. The numbers come from rosu-pp-gemini 5.0.4 (MIT, a fork of
+      rosu-pp that follows osu!'s algorithms after rosu-pp 4.0.1, which is behind live for osu! and
+      osu!taiko): checked against 413 of the user's lazer scores with osu!'s pp, all within 0.1%
+      (`pp::tests::real_scores`). Back to rosu-pp once it catches up
+
+## v1.2 — Tournament
+
+A tournament from Fumen: the pool built slot by slot, its matches read from osu!'s multiplayer
+rooms, and an overlay for the stream. The Tournament page (`views/pools.ts`, "Tournament" in the
+sidebar) lists the matches coming up, on and just over, and every pool as a card; a pool has three
+tabs: Slots, Matches, Players.
+
+- [x] Pools (`src-tauri/src/pools.rs`, migration 18; `lib/pools.ts`): kinds of slot, each with a
+      count and the mods it's played with: RC LN HB SV EX TB for osu!mania (the RPRO bot's kinds),
+      NM HD HR DT FM TB elsewhere, or one's own (up to 12 kinds of up to 16 slots). Slots keep a
+      difficulty by MD5 and osu!'s beatmap id. Each slot's star rating and most pp at its mods
+      (pp.rs), length and BPM at the rate; bars on top show the star ratings slot by slot. A
+      difficulty dragged in from the library, two slots swapped by dragging one onto the other, a
+      note per slot, "Add to pool…" in a difficulty's menu
+- [x] The picker (`views/pool-picker.ts`): the library, or osu! through the mirrors' search, or a
+      pasted link; what suits the slot first (in osu!mania the kind's character and a star rating
+      near the slot's place in its kind), and with lib/similar.ts what's like the slot's map (to
+      replace it) or like the other maps of its kind (to fill it). A difficulty that isn't in the
+      library comes as its chart off the mirrors (never osu!'s servers; `pool-charts` in the cache):
+      the slot keeps what the chart says and shows the library's once the set is imported
+- [x] Out of Fumen: the RPRO bot's Test match lines ("SLOT link"; only for osu!mania pools of its
+      kinds), a sheet as tab-separated text (copied), CSV (UTF-8 with a BOM) and JSON
+      (`lib/pool-export.ts`), and a showcase picture drawn on a canvas in the dark look
+      (`views/pool-showcase.ts`), copied or saved through the system's dialog (`save_file`)
+- [x] Matches (`src-tauri/src/matches.rs`, migration 19 `pool_matches`; `lib/matches.ts`,
+      `views/match.ts`): red and blue (two players or two teams), when, best of, warm-ups, first
+      pick; bans and picks from a slot's menu (the tiebreaker is nobody's). The multiplayer room
+      from its link (`…/community/matches/…`, `…/mp/…`) or number; osu!'s API gives its games with
+      the user's login (`matches/{id}`, page by page), asked again every 15 s while the match's page
+      is open or it's on stream. Each game goes in its slot with each side's score (a team adds up;
+      accuracy and combo rooms go by the side's best), the winner and the points; picks are every
+      other one from the first pick unless set by hand, the tiebreaker at match point for both.
+      Head-to-head players are found by name, else in the order they first played
+- [x] Players tab: maps won of played and the mean accuracy per kind of slot, and picks and bans
+      per kind, over the pool's matches
+- [x] Stream overlay (`src-tauri/src/overlay.rs`, `src-tauri/overlay/overlay.html`,
+      `views/overlay.ts`): switched on from the Tournament page, served at
+      http://127.0.0.1:<the first free port of 24180–24189>/ for an OBS browser source at
+      1920 × 1080 (transparent). Only this computer, only GET and HEAD, only pages that name it as
+      their host. The names and points, the map being played (or picked next, or played last),
+      every slot's ban, pick or win; `?only=bar|map|slots` for one part, `?scale=` to size it
+
+## v1.3 — Visualizer
+
+The fullscreen player's Visualizer tab, made anew. Feedback on 1.2: boring, nothing to adjust,
+doesn't look good, "not reactive enough". What it is today (`views/fullscreen.ts` `drawEq`,
+`lib/eq.ts` `readBars`): the art as a 16:9 card, the title under it, 72 bars in the accent colour
+along the bottom edge. Why it feels slow and flat:
+
+- One analyser (FFT 4096, an 85 ms window) with the browser's smoothing (0.7) on top: a kick is
+  smeared over several frames before a bar moves.
+- A fixed level window (−88…−18 dB) and the peak per band: loud, compressed masters (most osu!
+  songs) sit near the top all the time, a wall that barely moves; quiet songs stay low.
+- The analyser hears the audio element after its volume (`player.audio.volume`): at a low player
+  volume the bars shrink, and a track's fade-in shows as bars growing.
+- Bars fall at a fixed 1.4 per second, too slow to drop between beats.
+- Nothing but the bars moves, and nothing knows the beat, though every song comes with its
+  beatmap's timing points and kiai.
+- One look, one colour, no settings.
+
+Drafts: https://claude.ai/artifact/1TueN1j8Edk9HzRKwYxDsA (private; eight styles live on a
+synthesised demo track). Chosen on 2026-10-21: all but Noten (for the sake of choice), picked from a
+dropdown without previews; 1.2's look goes (Spektrum is its successor). The quick win as a 1.2
+patch was skipped: it all came at once.
+
+- [x] Analysis (`lib/vis/analysis.ts`, in place of `readBars`): two analysers without the
+      browser's smoothing (`lib/eq.ts`: 4096 for the bass below 400 Hz, 2048 above), float dB data,
+      128 log-spaced bands 30 Hz–16 kHz with +3 dB per octave. The level follows the song (up at
+      once, down 5 dB/s) with the sensitivity as the range; a band's steady sound fills at most
+      half the height, what rises above its own last second (a kick, a snare, a new note) fills the
+      rest, so a dense master isn't a wall. Rise and fall from the Reaction setting, per frame time.
+      Onsets by spectral flux against an adaptive threshold (kick 40–140 Hz, snare and hats
+      1.8–9 kHz); bass, mid and high; the waveform. The player's volume is a GainNode behind the
+      analysers once Web Audio is up (`player.useGain`; the element stays at 1, fades go through
+      the gain), so how loud you listen no longer changes the picture
+- [x] Beat clock (`lib/vis/beat.ts`): the playing difficulty's uninherited timing points and kiai
+      from `loadChart` (cached, the playfield shares it; no extra command needed): beat key and
+      phase, place in the bar (every timing point starts a bar, as in osu!), BPM; kiai eased in and
+      out. Song time is the player's minus `AudioContext.outputLatency` (at the rate), plus the
+      Beat offset setting. Without timing the kicks drive the pulse
+- [x] Frame and styles (`views/vis/`): `visualizer.ts` builds a frame per animation frame (the
+      analysis, beat, pulse, kiai, flash, colours, the cover and the one before it) and draws the
+      chosen style on one canvas under the whole fullscreen view (device pixel ratio up to 2);
+      content keeps clear of the top bar and the transport. Styles are modules
+      (`views/vis/styles/`), `draw(frame)` returns whether something still moves, so the loop
+      stops once a paused picture has settled. Canvas 2D
+- [x] Colours from the cover (`lib/vis/palette.ts`): k-means over a 48 × 27 copy of the background,
+      the two strongest colours apart in hue, lifted for a dark stage; they glide on a track change
+      while the old cover fades out under the new one. Or the accent, or one of six pairs
+- [x] Styles: Spektrum, Ring, Welle (Wave), Sternenfeld (Starfield), Bühne (Stage), Hi-Fi. A
+      dropdown in the top bar (hidden below 900 px) and at the top of the panel; V / Shift+V step
+      through them, crossfading
+- [x] Settings (`views/vis/panel.ts`, the sliders button in the top bar; prefs `visualizer`,
+      defaults filled in for older saves): colours, reaction, sensitivity, beat pulse, bars,
+      flashes in kiai (off / soft / full), background (blurred / cover / black) and its dimming,
+      kiai effects, mirrored (bass in the middle), title, beat offset, reset
+- [x] Polish: cinema (top bar, transport and cursor fade after 3 s untouched while the visualizer
+      plays and the panel is closed); reduced motion (a third of the pulse, no flashes, no
+      crossfades); flashes at most once a bar (on its first beat in kiai), twice a second at most
+      on kicks without a beatmap
+- [x] Tests: beat clock (beat, bar, meter and BPM changes, before the first point, kiai), levels
+      (loud and quiet alike, room above a steady sound, reaction), onsets, band reading and
+      resampling, palette; every style looked at in the browser preview on a real song
+- [x] Docs, website, release 1.3.0
+
+Later, not in 1.3: the beatmap's video behind the visualizer; the visualizer as an OBS source
+through the overlay server; a small visualizer in the player bar. Storyboards: not then; on the Later list since 2026-11-08.
+
+## After 1.0
+
+- Skills rework: from 1.0.0 the Skills page was greyed out under a note until the numbers were
+  reworked; done for 1.5 (2026-11-21) with Etterna's skillsets
+- macOS, moved from 1.0 to Later (nobody can test it yet: the tester's Mac doesn't open unsigned apps).
+  The code side is in 0.7.3. lazer's app in /Applications or ~/Applications
+  (`osu!.app/Contents/MacOS`: its assemblies, runtime and `sq.version`), its data in
+  ~/Library/Application Support/osu, running = a process from an osu!.app (`ps`); the importer works
+  as on Windows (lazer's folder hard-linked into Fumen's cache, nothing written into the signed
+  app), with its launcher built for macOS. osu!stable has no macOS build: not looked for. The window
+  keeps macOS's own buttons over the sidebar's head (`tauri.macos.conf.json`), ⌘F searches. Built on
+  GitHub's Macs (`npm run mac`, by hand, with milestone releases), Apple
+  Silicon tested against lazer's macOS release (from GitHub) first. Not signed by Apple, no
+  self-update on macOS until the release
+- 1.4 Progress: the skills rework (above); what was played when (lazer and osu! scores grouped into
+  sittings), a weekly report (plays, time, skills that moved, goals closer); share cards for the
+  week, pools, skills and goals; Discord Rich Presence ("listening to …", "practising Jacks 4.5★";
+  needs a Discord application, its client id made by the user in Discord's developer portal)
+- Later, no version yet:
+  - Skins: every skin on the same moment of a chart, two side by side, and mixing pieces of
+    several skins into an `.osk` (osu! / mania / taiko / catch parts per skin)
+  - Everywhere: Linux and macOS builds (Tauri, the .NET sidecar and lazer all run there; the
+    importer's host folder differs). Linux started 2026-10-22 for a tester: AppImage and .deb built
+    on GitHub (`npm run linux`, linux.yml, import tested against lazer's AppImage), downloads at
+    /download/linux, /download/linux-deb and /download/linux-arch. On the homepage since 1.3.18
+    (2026-10-27) as "in testing", with fumen.dertesti.dev/linux (install, and the reports to send:
+    render test "Run all and copy report", Ctrl+Shift+F12 in fullscreen, a GitHub issue form). lazer found as an AppImage
+    (unpacked once into ~/.cache/dev.fumen.app), the Flatpak or a package's folder (lazer_linux.rs);
+    audio plays from memory there (GStreamer can't read fumen://). No self-update on Linux yet.
+    Also: a read-only view of goals, skills and pools on fumen.dertesti.dev, synced from the app on
+    request
+  - Cloud scores (2026-11-22, in 1.5): every local score (lazer and stable) with its replay kept on
+    fumen.dertesti.dev, opt-in, so the history and the skills graph survive a new install and
+    follow you to another PC. Measured on the user's lazer folder: 1009 mania replays 9.4 MB
+    (avg 10 KB, p95 18 KB), 763 taiko 4.5 MB, 37 osu! 2 MB; all replays together ~16 MB, a
+    score without replay a few hundred bytes. ~10–30 MB per user, ~500 MB for an extreme player,
+    1–2 GB for today's ~60 active users: free for everyone, no subscription (fees and German
+    subscription rules would cost more than the storage); a generous cap per user (~1 GB),
+    donations at most. Needs: upload of what's new only, delete everything from the app,
+    a line in the privacy notice, only the owner sees their data.
+    The map list too: the osu! set ids of the library (user's: 4535 of 4749 sets have one, ~40 KB),
+    and on a new PC "restore all maps" fetches them from the mirrors like any download (hours for
+    thousands of sets, so it runs in the background). Sets without an id (214, unsubmitted or
+    edited) aren't uploaded; the restore lists what it couldn't fetch
+  - Share cards: pictures of the week, pools, skills and goals to post (in 1.5 until 2026-11-23,
+    moved here on the user's call)
+  - osu!collector packs (a tester's wish, 2026-10-24, after the Linux fixes): Add beatmaps takes
+    an osu!collector link to a collection and downloads every set in it from the mirrors, into
+    lazer like any other download (maybe kept as a Fumen collection too)
+  - Mapping lens: difficulty spikes along a chart, a pattern heatmap per section, a spread check
+    across a set's difficulties; the analyser's leftovers (Azusa's marathon correction, Roxy /
+    Mixed estimators — v0.2)
+
+## Workflow
+
+- GitHub repo `fumen` (private until 0.1 is solid), `main` branch, small focused commits.
+- CI (GitHub Actions): frontend (typecheck, UI tests, build) and backend (windows-latest: helpers
+  build, `cargo clippy`, Rust tests), each only when its side changes. macOS (`mac.yml`) only by
+  hand: `npm run mac`, with milestone releases (minor versions) only.
+- After a lazer update: `npm run verify-lazer -- --push` with lazer closed.
+- Site changes: `node scripts/deploy-site.mjs` (the VPS's `.env` holds the osu! secret, never git).
+- Releases: `npm run release -- patch` on the PC (signed NSIS installer → GitHub release + fumen.dertesti.dev/updates/, which Tauri's updater
+  reads). Built locally, where the updater's signing key is; it never goes to GitHub.
+
+## Risks
+
+| Risk | Mitigation |
+|---|---|
+| lazer bumps Realm file format | Pin Realm NuGet to lazer's version; sidecar fails loudly with a clear message; update NuGet |
+| Sidecar size | Trimmed single-file publish: ~13 MB. A native Rust Realm reader stays a long-term option |
+| Schema field renames in lazer | Dynamic access with per-field fallbacks; missing fields become null, never crash |
+| A lazer update changes the import | Imports switch off for untested versions; the importer finds lazer's classes by name and fails loudly; the schema guard never opens a database lazer would migrate; backup before every import; `verify-lazer` before listing a version |
+| Large library memory | Compact snapshot (indices instead of ids, no duplicate fields) + virtualised lists; revisit paging if libraries far beyond 50k difficulties show up |

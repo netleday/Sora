@@ -1,0 +1,338 @@
+/* Typed wrappers around the Tauri commands, plus fumen:// URLs. */
+import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { Attempt } from "./attempts";
+import type { HeartDevice } from "./heart";
+import type { HeartTry } from "./heart-stats";
+import type { Comparison } from "./compare";
+import type { Goal } from "./goals";
+import { fromRust } from "./i18n";
+import type { ChartMods } from "./mods";
+import type { Match, MatchPatch } from "./matches";
+import type { Pool, PoolKind } from "./pools";
+import type { SitTry } from "./sittings";
+import type {
+  CareReport, ApiError,
+  ChartData,
+  ChartSounds,
+  OnlineReplayEntry,
+  ReplayData,
+  ReplayEntry,
+  DanRating,
+  PpHits, PpSheet,
+  CollectionPick, FumenCollection,
+  History,
+  ImportProgress,
+  ImportSummary,
+  PlayedFound,
+  LazerImportStatus,
+  MapStoryboard,
+  MapVideo,
+  Msd,
+  RepairSummary,
+  LazerInstall, StableInstall,
+  LibraryStatus,
+  MirrorPage, MirrorQuery,
+  OsuAccount,
+  ScanProgress,
+  Settings,
+  FumenBlock,
+  SkinList,
+  Snapshot,
+  SyncSummary,
+  LivePlay,
+  PoolChoice,
+  PoolRow,
+  CloudSync,
+} from "./types";
+
+export const isTauri = "__TAURI_INTERNALS__" in window;
+/** macOS: the window keeps its own title bar buttons (top left), shortcuts use ⌘ */
+export const isMac = navigator.userAgent.includes("Mac OS");
+export const isLinux = /Linux/.test(navigator.userAgent) && !/Android/.test(navigator.userAgent);
+
+export const api = {
+  getSettings: () => invoke<Settings>("get_settings"),
+  /** the online features on (their terms accepted) or off (logs out of osu!); answers the first
+   * start's terms too */
+  setOnline: (on: boolean) => invoke<Settings>("set_online", { on }),
+  /** the block check; `ask`: from the block page, also with the online features off */
+  checkBlock: (ask: boolean) => invoke<FumenBlock | null>("check_block", { ask }),
+  notedBlock: () => invoke<FumenBlock | null>("noted_block"),
+  updateSettings: (patch: Partial<Settings> | Record<string, unknown>) => invoke<Settings>("update_settings", { patch }),
+  inspectLazerPath: (path: string) => invoke<LazerInstall | null>("inspect_lazer_path", { path }),
+  inspectStablePath: (path: string) => invoke<StableInstall | null>("inspect_stable_path", { path }),
+  libraryStatus: () => invoke<LibraryStatus>("library_status"),
+  libraryCare: () => invoke<CareReport>("library_care"),
+  scanLibrary: () => invoke<{ sets: number; maps: number; scores: number; collections: number }>("scan_library"),
+  async getLibrary(): Promise<Snapshot> {
+    // raw JSON bytes (tauri::ipc::Response) — parse here, it's ~7 MB for a large library
+    const raw = await invoke<ArrayBuffer | Snapshot>("get_library");
+    if (raw instanceof ArrayBuffer) return JSON.parse(new TextDecoder().decode(raw)) as Snapshot;
+    return raw;
+  },
+  /** a difficulty's chart; `mods`: the ones that change the chart itself (lib/mods) */
+  async getChart(id: string, mods?: ChartMods): Promise<ChartData> {
+    const raw = await invoke<ArrayBuffer | ChartData>("get_chart", { id, mods: mods ?? null });
+    if (raw instanceof ArrayBuffer) return JSON.parse(new TextDecoder().decode(raw)) as ChartData;
+    return raw;
+  },
+  /** an osu!mania difficulty's dan at a clock rate */
+  getDan: (id: string, rate: number) => invoke<DanRating | null>("get_dan", { id, rate }),
+  /** Etterna's MSD at a rate (osu!mania 4K to 7K) */
+  getMsd: (id: string, rate: number) => invoke<Msd | null>("get_msd", { id, rate }),
+  /** Etterna's MSD at 0.7× … 2.0× (a tenth apart, [overall, the seven skillsets] each) for the
+   * library's osu!mania difficulties in a key mode, by difficulty id */
+  async msdRates(keys: number): Promise<Record<string, number[][]>> {
+    const raw = await invoke<ArrayBuffer | Record<string, number[][]>>("msd_rates", { keys });
+    if (raw instanceof ArrayBuffer) return JSON.parse(new TextDecoder().decode(raw)) as Record<string, number[][]>;
+    return raw;
+  },
+  getPools: () => invoke<Pool[]>("get_pools"),
+  createPool: (name: string, mode: number, keys: number | null, categories: PoolKind[]) => invoke<string>("create_pool", { name, mode, keys, categories }),
+  updatePool: (id: string, patch: { name?: string; categories?: PoolKind[]; note?: string }) => invoke<void>("update_pool", { id, patch }),
+  deletePool: (id: string) => invoke<void>("delete_pool", { id }),
+  setPoolSlot: (id: string, slot: string, map: string) => invoke<void>("set_pool_slot", { id, slot, map }),
+  getMatches: () => invoke<Match[]>("get_matches"),
+  createMatch: (pool: string, patch: MatchPatch) => invoke<string>("create_match", { pool, patch }),
+  updateMatch: (id: string, patch: MatchPatch) => invoke<void>("update_match", { id, patch }),
+  deleteMatch: (id: string) => invoke<void>("delete_match", { id }),
+  /** a match's multiplayer room from a link to it or its number ("": none) */
+  setMatchRoom: (id: string, link: string) => invoke<void>("set_match_room", { id, link }),
+  /** the room's games as osu! has them now (needs the osu! login) */
+  refreshMatch: (id: string) => invoke<Match>("refresh_match", { id }),
+  /** saves bytes where the player picks in the system's save dialog (only csv, json or png); the
+   * file's name, null when cancelled */
+  saveFile: (kind: "csv" | "json" | "png", name: string, data: Uint8Array, title: string, filter: string) =>
+    invoke<string | null>("save_file", data, {
+      headers: { "x-fumen-kind": kind, "x-fumen-name": encodeURIComponent(name), "x-fumen-title": encodeURIComponent(title), "x-fumen-filter": encodeURIComponent(filter) },
+    }),
+  /** osu!'s difficulty by link or number into a slot: the library's, else its chart from the mirrors */
+  setPoolSlotOnline: (id: string, slot: string, link: string) => invoke<void>("set_pool_slot_online", { id, slot, link }),
+  clearPoolSlot: (id: string, slot: string) => invoke<void>("clear_pool_slot", { id, slot }),
+  swapPoolSlots: (id: string, a: string, b: string) => invoke<void>("swap_pool_slots", { id, a, b }),
+  setPoolSlotNote: (id: string, slot: string, note: string) => invoke<void>("set_pool_slot_note", { id, slot, note }),
+  /** pp at some mods and a rate: a perfect play and each of `plays` (pp.rs) */
+  getPp: (id: string, mods: string[], rate: number, plays: PpHits[]) => invoke<PpSheet>("get_pp", { id, mods, rate, plays }),
+  /** an osu!mania difficulty's hitsounds */
+  getHitsounds: (id: string) => invoke<ChartSounds>("get_hitsounds", { id }),
+  /** lazer's scores on a difficulty that come with a replay, best first */
+  replaysForMap: (id: string) => invoke<ReplayEntry[]>("replays_for_map", { id }),
+  /** a lazer score's replay frames ([time, x, y, buttons] each) */
+  getReplay: (id: string) => invoke<ReplayData>("get_replay", { id }),
+  /** plays as they happened (live.rs): since a time, one, and its replay */
+  livePlays: (since: number) => invoke<LivePlay[]>("live_plays", { since }),
+  livePlay: (id: string) => invoke<LivePlay | null>("live_play", { id }),
+  /** the library difficulty with this MD5 */
+  mapByMd5: (md5: string) => invoke<string | null>("map_by_md5", { md5 }),
+  /** tosu (tosu.app), which Fumen follows osu! through */
+  tosuStatus: () => invoke<{ running: boolean; path: string | null }>("tosu_status"),
+  setTosuPath: (path: string) => invoke<Settings>("set_tosu_path", { path }),
+  startTosu: () => invoke<void>("start_tosu"),
+  /** Fumen's window on tosu's allowed addresses (Windows), tosu started again if it had to be */
+  tosuLetIn: () => invoke<{ changed: boolean; restarted: boolean }>("tosu_let_in"),
+  /** every try at a map (lib/attempts) */
+  saveAttempt: (attempt: Attempt) => invoke<number>("save_attempt", { attempt }),
+  attemptsForMap: (md5: string, limit?: number) => invoke<Attempt[]>("attempts_for_map", { md5, limit }),
+  attemptsSince: (since: number) => invoke<Attempt[]>("attempts_since", { since }),
+  /** the tries between two times in short, oldest first (History's sittings, lib/sittings) */
+  triesBetween: (from: number, to: number) => invoke<SitTry[]>("tries_between", { from, to }),
+  /** the heart rate monitor (src-tauri/src/heart.rs, lib/heart) */
+  heartScan: () => invoke<HeartDevice[]>("heart_scan"),
+  heartConnect: (id: string, name: string) => invoke<void>("heart_connect", { id, name }),
+  heartDisconnect: () => invoke<void>("heart_disconnect"),
+  /** Fumen's status in Discord (src-tauri/src/discord.rs, lib/discord) */
+  discordSet: (activity: Record<string, unknown> | null) => invoke<void>("discord_set", { activity }),
+  discordStatus: () => invoke<{ configured: boolean; connected: boolean }>("discord_status"),
+  /** every try with its pulse, in short */
+  heartTries: () => invoke<HeartTry[]>("heart_tries"),
+  liveReplay: (id: string) => invoke<ReplayData>("live_replay", { id }),
+  poolChoices: () => invoke<PoolChoice[]>("pool_choices"),
+  poolRows: (id: string, since: number) => invoke<PoolRow[]>("pool_rows", { id, since }),
+  openCompanion: () => invoke<void>("open_companion"),
+  /** Linux: WebKit's inspector */
+  openInspector: () => invoke<void>("open_inspector"),
+  /** Linux: the system for a performance report, as label and value pairs (empty elsewhere) */
+  systemInfo: () => invoke<[string, string][]>("system_info"),
+  closeCompanion: () => invoke<void>("close_companion"),
+  fitCompanion: (height: number) => invoke<void>("fit_companion", { height }),
+  showMain: () => invoke<void>("show_main"),
+  /** the player's scores on osu! for a difficulty (one API request, when asked) */
+  onlineReplaysForMap: (id: string) => invoke<OnlineReplayEntry[]>("online_replays_for_map", { id }),
+  /** a score's replay from osu!, downloaded once and kept */
+  getOnlineReplay: (id: number) => invoke<ReplayData>("get_online_replay", { id }),
+  getSkins: () => invoke<SkinList>("get_skins"),
+  /** [filename, sha256] per file */
+  async getSkinFiles(id: string): Promise<[string, string][]> {
+    const raw = await invoke<ArrayBuffer | [string, string][]>("get_skin_files", { id });
+    if (raw instanceof ArrayBuffer) return JSON.parse(new TextDecoder().decode(raw)) as [string, string][];
+    return raw;
+  },
+  /** a difficulty's background video, if it has one */
+  mapVideo: (id: string) => invoke<MapVideo | null>("map_video", { id }),
+  /** a difficulty's storyboard, if it has one */
+  mapStoryboard: (id: string) => invoke<MapStoryboard | null>("map_storyboard", { id }),
+  /** starts osu!lazer or osu!stable */
+  launchOsu: (client: "lazer" | "stable") => invoke<void>("launch_osu", { client }),
+  /** which osu! runs right now */
+  osuRunning: () => invoke<{ lazer: boolean; stable: boolean }>("osu_running"),
+  /** asks a running osu! to close; how many of its windows were asked */
+  closeOsu: (client: "lazer" | "stable") => invoke<number>("close_osu", { client }),
+  /** asks a running osu!lazer to close; how many of its windows were asked */
+  closeLazer: () => invoke<number>("close_lazer"),
+  /** whether sets can be imported into osu!lazer right now */
+  lazerImportStatus: () => invoke<LazerImportStatus>("lazer_import_status").then((s) => ({ ...s, message: s.message && fromRust(s.message) })),
+  /** downloads the sets behind osu! links and imports them into lazer, or puts them into osu!stable's
+   * Songs folder (progress: onImportProgress) */
+  importBeatmaps: (links: string[], target: "lazer" | "stable" = "lazer") =>
+    invoke<ImportSummary>("import_beatmaps", { links, target }).then((s) => ({ ...s, stopped: s.stopped && fromRust(s.stopped) })),
+  /** every collection into the cloud (fumen.dertesti.dev), under the osu! login */
+  cloudPushCollections: () => invoke<{ collections: number; saved: number }>("cloud_push_collections"),
+  /** the cloud's collections merged into this library; the sets they want that it doesn't have */
+  cloudPullCollections: () =>
+    invoke<{ collections: number; created: number; added: number; missing: { id: number; maps: number }[]; saved: number }>("cloud_pull_collections"),
+  /** one page of a beatmap search on the mirrors (never osu!'s servers) */
+  searchMirrors: (query: MirrorQuery) => invoke<MirrorPage>("search_mirrors", { query }),
+  /** stops the running import after the sets being imported right now */
+  cancelImport: () => invoke<void>("cancel_import"),
+  repairLazerSets: () => invoke<RepairSummary>("repair_lazer_sets"),
+  /** another player's osu!mania plays and charts, for comparing skills (lib/compare.ts) */
+  comparePlayer: async (name: string): Promise<Comparison> => {
+    const raw = await invoke<ArrayBuffer | Comparison>("compare_player", { name });
+    if (raw instanceof ArrayBuffer) return JSON.parse(new TextDecoder().decode(raw)) as Comparison;
+    return raw;
+  },
+  cancelCompare: () => invoke<void>("cancel_compare"),
+  /** every set the player has played that osu!lazer doesn't have (progress: onPlayedProgress) */
+  findPlayedSets: () => invoke<PlayedFound>("find_played_sets"),
+  /** the osu! account as last seen (no network) */
+  osuAccount: () => invoke<OsuAccount | null>("osu_account"),
+  /** logs in through the browser; resolves once it's back */
+  osuLogin: () => invoke<OsuAccount>("osu_login"),
+  osuLoginCancel: () => invoke<void>("osu_login_cancel"),
+  /** the account as osu! has it now; null when not logged in (anymore) */
+  osuRefreshAccount: () => invoke<OsuAccount | null>("osu_refresh_account"),
+  osuLogout: () => invoke<void>("osu_logout"),
+  /** the player's plays, local and from osu! */
+  async getHistory(): Promise<History> {
+    const raw = await invoke<ArrayBuffer | History>("get_history");
+    if (raw instanceof ArrayBuffer) return JSON.parse(new TextDecoder().decode(raw)) as History;
+    return raw;
+  },
+  /** reads the player's scores, stats and play counts from osu! */
+  syncOsuScores: () => invoke<SyncSummary>("sync_osu_scores"),
+  /** reads the player's scores on one difficulty (osu!'s id) from osu!; how many were new */
+  syncMapScores: (beatmapId: number, modes: number[]) => invoke<number>("sync_map_scores", { beatmapId, modes }),
+  /** Fumen's own collections (lib/collections.ts); maps are library difficulty ids */
+  getCollections: () => invoke<FumenCollection[]>("get_collections"),
+  createCollection: (name: string, maps: string[] = []) => invoke<string>("create_collection", { name, maps }),
+  copyLazerCollection: (id: string, name: string) => invoke<string>("copy_lazer_collection", { id, name }),
+  /** a saved search (FilterState as JSON) as a smart collection */
+  createSmartCollection: (name: string, query: string) => invoke<string>("create_smart_collection", { name, query }),
+  setCollectionQuery: (id: string, query: string) => invoke<void>("set_collection_query", { id, query }),
+  /** into lazer's collections (lazer closed, tested version, backup first); then a rescan */
+  putCollectionsIntoLazer: (picks: CollectionPick[]) => invoke<{ created: number; updated: number }>("put_collections_into_lazer", { picks }),
+  /** lazer's own Delete on these sets (lazer removes them for good when it next starts) */
+  deleteSetsInLazer: (ids: string[]) => invoke<{ deleted: number; skipped: number }>("delete_sets_in_lazer", { ids }),
+  /** a stable collection.db at `path`; how many collections went in */
+  /** opens the save dialog itself; null when it was cancelled */
+  saveCollectionDb: (title: string, filter: string, picks: CollectionPick[]) => invoke<number | null>("save_collection_db", { title, filter, picks }),
+  renameCollection: (id: string, name: string) => invoke<void>("rename_collection", { id, name }),
+  deleteCollection: (id: string) => invoke<void>("delete_collection", { id }),
+  /** how many weren't in it yet */
+  addToCollection: (id: string, maps: string[]) => invoke<number>("add_to_collection", { id, maps }),
+  /** how many were in it */
+  removeFromCollection: (id: string, maps: string[]) => invoke<number>("remove_from_collection", { id, maps }),
+  /** the player's scores, replays and map list in the cloud (lib/cloud-scores) */
+  cloudScoresSync: (fetch = false) => invoke<CloudSync>("cloud_scores_sync", { fetch }),
+  /** osu! set ids in the cloud's map list that the library doesn't have */
+  cloudMissingSets: () => invoke<number[]>("cloud_missing_sets"),
+  /** scores, replays, map list and collections, all gone from the cloud */
+  cloudDeleteAll: () => invoke<void>("cloud_delete_all"),
+  /** the player's goals, oldest first (lib/goals.ts) */
+  getGoals: () => invoke<Goal[]>("get_goals"),
+  putGoal: (goal: Goal) => invoke<void>("put_goal", { goal }),
+  deleteGoal: (id: string) => invoke<void>("delete_goal", { id }),
+};
+
+export function onScanProgress(cb: (p: ScanProgress) => void): Promise<UnlistenFn> {
+  return listen<ScanProgress>("scan-progress", (e) => cb(e.payload));
+}
+
+/** The plays changed (sync, login, logout); `library`: the library's best scores may have too. */
+export function onCareProgress(cb: (p: { done: number; total: number }) => void): Promise<UnlistenFn> {
+  return listen<{ done: number; total: number }>("care-progress", (e) => cb(e.payload));
+}
+
+/** Replays going up to the cloud: how many of how many. */
+export function onCloudProgress(cb: (p: { done: number; of: number }) => void): Promise<UnlistenFn> {
+  return listen<{ done: number; of: number }>("cloud-progress", (e) => cb(e.payload));
+}
+
+/** A play just happened (lazer saved its replay). */
+export function onLivePlay(cb: (p: LivePlay) => void): Promise<UnlistenFn> {
+  return listen<LivePlay>("live-play", (e) => cb(e.payload));
+}
+
+export function onHistoryChanged(cb: (library: boolean) => void): Promise<UnlistenFn> {
+  return listen<boolean>("history-changed", (e) => cb(e.payload));
+}
+
+export function onImportProgress(cb: (p: ImportProgress) => void): Promise<UnlistenFn> {
+  return listen<ImportProgress>("import-progress", (e) => cb(e.payload));
+}
+
+/** finding played sets: play counts and scores read from osu! so far */
+export function onPlayedProgress(cb: (read: number) => void): Promise<UnlistenFn> {
+  return listen<number>("played-progress", (e) => cb(e.payload));
+}
+
+/** Background chart analysis of the whole library (after imports and on start). */
+export function onAnalysis(progress: (p: ScanProgress) => void, done: () => void): Promise<UnlistenFn[]> {
+  return Promise.all([
+    listen<ScanProgress>("analysis-progress", (e) => progress(e.payload)),
+    listen("analysis-done", () => done()),
+  ]);
+}
+
+export function asApiError(e: unknown): ApiError {
+  if (e && typeof e === "object" && "message" in e) {
+    const o = e as { code?: unknown; message?: unknown };
+    return { code: String(o.code ?? "unknown"), message: fromRust(String(o.message)) };
+  }
+  return { code: "unknown", message: String(e) };
+}
+
+// ── fumen:// ───────────────────────────────────────────────────────────────
+// WebView2 (Windows) serves custom schemes as http://<scheme>.localhost. The browser preview
+// (tools/browser-preview) points this at its own dev-server routes.
+const BASE =
+  (window as { __FUMEN_BASE__?: string }).__FUMEN_BASE__ ??
+  (navigator.userAgent.includes("Windows") ? "http://fumen.localhost/" : "fumen://localhost/");
+
+export const fileUrl = (hash: string): string => `${BASE}file/${hash}`;
+/** an address under fumen://localhost/ as the backend gives it ("file/<hash>", "sb/…") */
+export const fumenUrl = (path: string): string => `${BASE}${path}`;
+/** WebKitGTK (Linux) plays media through GStreamer, which can't read fumen:// itself: the player
+ * fetches the file and plays it from memory there (`fetch` reads custom schemes fine). */
+export const mediaFromMemory = !(window as { __FUMEN_BASE__?: string }).__FUMEN_BASE__ && /Linux/.test(navigator.userAgent) && !/Android/.test(navigator.userAgent);
+/** There, songs come from Fumen's own server on 127.0.0.1 (media_server.rs) once it answers: WebKitGTK
+ * plays a stream far better than a blob from memory, which made the whole app stutter. */
+let mediaBase: string | null = null;
+if (mediaFromMemory) invoke<string | null>("media_base").then((b) => (mediaBase = b), () => {});
+/** The song file's address on that server; null where there's none (memory or fumen:// then). */
+export const mediaUrl = (hash: string): string | null => (mediaBase ? `${mediaBase}file/${hash}` : null);
+export const thumbUrl = (hash: string, width: number): string => `${BASE}thumb/${width}/${hash}`;
+/** lazer's built-in skin files: classic / retro textures, hit sounds of all of them */
+export type BuiltinSkin = "classic" | "retro" | "triangles" | "argon" | "argon-pro";
+export const builtinSkinUrl = (skin: BuiltinSkin, name: string): string => `${BASE}skin/${skin}/${encodeURIComponent(name)}`;
+
+export const osuSetUrl = (onlineId: number): string => `https://osu.ppy.sh/beatmapsets/${onlineId}`;
+/** The map in osu! itself (its osu:// link): osu!lazer opens the map's page over the game, where
+ * "Go to beatmap" picks it in song select; nothing can pick a map there directly. */
+export const osuGameUrl = (setId: number, mapId?: number | null): string => (mapId ? `osu://b/${mapId}` : `osu://s/${setId}`);
+export const osuMapUrl = (setId: number, mapId: number, mode: number): string =>
+  `https://osu.ppy.sh/beatmapsets/${setId}#${["osu", "taiko", "fruits", "mania"][mode] ?? "osu"}/${mapId}`;
+export const osuScoreUrl = (id: number): string => `https://osu.ppy.sh/scores/${id}`;
+/** a set's cover on osu! (list: 150×150, @2x: 300×300) */
+export const osuCoverUrl = (setId: number): string => `https://assets.ppy.sh/beatmaps/${setId}/covers/list@2x.jpg`;

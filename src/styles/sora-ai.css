@@ -1,0 +1,123 @@
+/* sora-ai.css — Sora AI Assistant chat view */
+.ai-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 18px 24px 24px;
+  gap: 14px;
+}
+
+.ai-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  border-radius: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(16px);
+}
+
+.ai-head-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ai-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: top center;
+  border: 2px solid #c77dff;
+  background: #140d24;
+}
+
+.ai-messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 6px 4px;
+}
+
+.ai-msg {
+  display: flex;
+  gap: 10px;
+  max-width: 85%;
+  animation: sora-view-pop 0.22s ease;
+}
+
+.ai-msg.user {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+
+.ai-bubble {
+  padding: 12px 15px;
+  border-radius: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 13.5px;
+  line-height: 1.5;
+  backdrop-filter: blur(12px);
+}
+
+.ai-msg.user .ai-bubble {
+  background: linear-gradient(135deg, rgba(157, 78, 221, 0.35), rgba(255, 107, 203, 0.22));
+  border-color: rgba(199, 125, 255, 0.5);
+}
+
+.ai-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.ai-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ai-chip {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(199, 125, 255, 0.32);
+  background: rgba(22, 16, 38, 0.72);
+  color: #e0aaff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ai-chip:hover {
+  background: rgba(157, 78, 221, 0.3);
+  color: #fff;
+}
+
+.ai-input-row {
+  display: flex;
+  gap: 10px;
+}
+
+.ai-input-row input {
+  flex: 1;
+  padding: 11px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13.5px;
+  outline: none;
+}
+.ai-input-row input:focus {
+  border-color: #c77dff;
+}

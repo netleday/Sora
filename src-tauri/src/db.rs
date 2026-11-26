@@ -1,0 +1,511 @@
+//! SQLite cache of the imported library plus Fumen's own data (later: collections, analysis,
+//! pools). Migrations are append-only and tracked with `PRAGMA user_version`.
+
+use std::path::Path;
+
+use rusqlite::{Connection, OptionalExtension};
+
+use crate::error::Result;
+
+const MIGRATIONS: &[&str] = &[
+    // 1 — lazer import
+    r#"
+    CREATE TABLE sets (
+        id             TEXT PRIMARY KEY,
+        source         TEXT NOT NULL DEFAULT 'lazer',
+        online_id      INTEGER,
+        status         INTEGER,
+        date_added     INTEGER,
+        date_submitted INTEGER,
+        date_ranked    INTEGER,
+        protected      INTEGER NOT NULL DEFAULT 0,
+        title          TEXT NOT NULL DEFAULT '',
+        title_unicode  TEXT NOT NULL DEFAULT '',
+        artist         TEXT NOT NULL DEFAULT '',
+        artist_unicode TEXT NOT NULL DEFAULT '',
+        creator        TEXT NOT NULL DEFAULT '',
+        creator_id     INTEGER,
+        source_text    TEXT NOT NULL DEFAULT '',
+        tags           TEXT NOT NULL DEFAULT '',
+        bg             TEXT,
+        audio          TEXT,
+        preview_time   INTEGER
+    );
+    CREATE TABLE maps (
+        id           TEXT PRIMARY KEY,
+        set_id       TEXT NOT NULL REFERENCES sets(id) ON DELETE CASCADE,
+        online_id    INTEGER,
+        version      TEXT NOT NULL DEFAULT '',
+        ruleset      TEXT,
+        ruleset_id   INTEGER,
+        status       INTEGER,
+        hash         TEXT,
+        md5          TEXT,
+        sr           REAL,
+        bpm          REAL,
+        length       REAL,
+        objects      INTEGER,
+        end_objects  INTEGER,
+        last_played  INTEGER,
+        last_update  INTEGER,
+        hidden       INTEGER NOT NULL DEFAULT 0,
+        hp           REAL,
+        cs           REAL,
+        od           REAL,
+        ar           REAL,
+        bg           TEXT,
+        audio        TEXT,
+        preview_time INTEGER
+    );
+    CREATE INDEX maps_set ON maps(set_id);
+    CREATE INDEX maps_md5 ON maps(md5);
+    CREATE TABLE scores (
+        id                 TEXT PRIMARY KEY,
+        map_id             TEXT,
+        map_md5            TEXT,
+        ruleset            TEXT,
+        total_score        INTEGER,
+        accuracy           REAL,
+        max_combo          INTEGER,
+        rank               INTEGER,
+        pp                 REAL,
+        date               INTEGER,
+        mods               TEXT,
+        statistics         TEXT,
+        maximum_statistics TEXT,
+        online_id          INTEGER,
+        legacy             INTEGER NOT NULL DEFAULT 0,
+        user               TEXT,
+        user_id            INTEGER
+    );
+    CREATE INDEX scores_md5 ON scores(map_md5);
+    CREATE TABLE lazer_collections (
+        id       TEXT PRIMARY KEY,
+        name     TEXT NOT NULL,
+        modified INTEGER,
+        position INTEGER NOT NULL
+    );
+    CREATE TABLE lazer_collection_items (
+        collection_id TEXT NOT NULL REFERENCES lazer_collections(id) ON DELETE CASCADE,
+        md5           TEXT NOT NULL,
+        position      INTEGER NOT NULL
+    );
+    CREATE INDEX lazer_collection_items_c ON lazer_collection_items(collection_id);
+    CREATE TABLE meta (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+    "#,
+    // 2 — chart analysis, keyed by the .osu file's SHA-256 (content-addressed: never stale)
+    r#"
+    CREATE TABLE chart_stats (
+        hash          TEXT PRIMARY KEY,
+        version       INTEGER NOT NULL,
+        nps_avg       REAL,
+        nps_peak      REAL,
+        ln_time       REAL,
+        jack_ratio    REAL,
+        longest_burst INTEGER,
+        tags          TEXT NOT NULL DEFAULT '',
+        patterns      TEXT NOT NULL DEFAULT '[]'
+    );
+    "#,
+    // 3 — osu!mania star ratings at HT (0.75×) and DT (1.5×), from Fumen's own calculator
+    r#"
+    ALTER TABLE chart_stats ADD COLUMN sr_ht REAL;
+    ALTER TABLE chart_stats ADD COLUMN sr_dt REAL;
+    "#,
+    // 4 — lazer skins (for the playfield preview); files are [filename, sha256] pairs as JSON
+    r#"
+    CREATE TABLE skins (
+        id        TEXT PRIMARY KEY,
+        name      TEXT NOT NULL DEFAULT '',
+        creator   TEXT NOT NULL DEFAULT '',
+        kind      TEXT NOT NULL,
+        protected INTEGER NOT NULL DEFAULT 0,
+        position  INTEGER NOT NULL,
+        files     TEXT NOT NULL DEFAULT '[]'
+    );
+    "#,
+    // 5 — dan rating (label and, for 4K rice, Azusa's number) and pattern category, at 1×
+    r#"
+    ALTER TABLE chart_stats ADD COLUMN dan TEXT;
+    ALTER TABLE chart_stats ADD COLUMN dan_value REAL;
+    ALTER TABLE chart_stats ADD COLUMN category TEXT;
+    "#,
+    // 6 — a set's sound files and storyboard ([filename, sha256] pairs as JSON), for hitsounds
+    r#"
+    ALTER TABLE sets ADD COLUMN sounds TEXT NOT NULL DEFAULT '[]';
+    "#,
+    // 7 — osu!mania star rating at 1× from Fumen's calculator: stands in until lazer has its own
+    //     (sets imported through Fumen get theirs on lazer's next start)
+    r#"
+    ALTER TABLE chart_stats ADD COLUMN sr REAL;
+    "#,
+    // 8 — what osu! knows about the logged-in player (osu_scores.rs): scores (ids are osu!'s solo
+    //     score ids, the online ids lazer keeps), the difficulties they're on, the most played
+    //     difficulties. A library rescan never touches these.
+    r#"
+    CREATE TABLE osu_beatmaps (
+        id             INTEGER PRIMARY KEY,
+        set_id         INTEGER,
+        md5            TEXT,
+        mode           INTEGER,
+        version        TEXT NOT NULL DEFAULT '',
+        sr             REAL,
+        length         REAL,
+        title          TEXT NOT NULL DEFAULT '',
+        title_unicode  TEXT NOT NULL DEFAULT '',
+        artist         TEXT NOT NULL DEFAULT '',
+        artist_unicode TEXT NOT NULL DEFAULT '',
+        creator        TEXT NOT NULL DEFAULT ''
+    );
+    CREATE TABLE osu_scores (
+        id          INTEGER PRIMARY KEY,
+        user_id     INTEGER NOT NULL,
+        beatmap_id  INTEGER NOT NULL,
+        mode        INTEGER NOT NULL,
+        total_score INTEGER NOT NULL DEFAULT 0,
+        accuracy    REAL NOT NULL DEFAULT 0,
+        max_combo   INTEGER NOT NULL DEFAULT 0,
+        rank        INTEGER NOT NULL DEFAULT -1,
+        pp          REAL,
+        passed      INTEGER NOT NULL DEFAULT 1,
+        date        INTEGER NOT NULL,
+        mods        TEXT NOT NULL DEFAULT '[]',
+        statistics  TEXT NOT NULL DEFAULT '{}',
+        legacy_id   INTEGER,
+        best_pos    INTEGER
+    );
+    CREATE INDEX osu_scores_beatmap ON osu_scores(beatmap_id);
+    CREATE TABLE osu_playcounts (
+        beatmap_id INTEGER PRIMARY KEY,
+        count      INTEGER NOT NULL,
+        position   INTEGER NOT NULL
+    );
+    CREATE INDEX scores_online ON scores(online_id);
+    "#,
+    // 9 — osu!mania star ratings at rates people played that the library doesn't carry (0.75× and
+    //     1.5× are in chart_stats), from Fumen's calculator: rate × 100, for analysis `version`
+    r#"
+    CREATE TABLE rate_stars (
+        hash    TEXT NOT NULL,
+        rate    INTEGER NOT NULL,
+        version INTEGER NOT NULL,
+        sr      REAL NOT NULL,
+        PRIMARY KEY (hash, rate)
+    );
+    "#,
+    // 10 — the player's goals (src/goals.rs): JSON as the UI keeps it
+    r#"
+    CREATE TABLE goals (
+        id      TEXT PRIMARY KEY,
+        created INTEGER NOT NULL,
+        data    TEXT NOT NULL
+    );
+    "#,
+    // 11 — Fumen's own collections (src/collections.rs): difficulties by MD5, like lazer's and
+    //      stable's; `query` is for saved searches later
+    r#"
+    CREATE TABLE collections (
+        id       TEXT PRIMARY KEY,
+        name     TEXT NOT NULL,
+        created  INTEGER NOT NULL,
+        position INTEGER NOT NULL,
+        query    TEXT
+    );
+    CREATE TABLE collection_items (
+        collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+        md5           TEXT NOT NULL,
+        added         INTEGER NOT NULL,
+        PRIMARY KEY (collection_id, md5)
+    );
+    "#,
+    // 12 — the lazer collection a Fumen collection went into (or was copied from), so putting it
+    //      into lazer again updates that one
+    r#"
+    ALTER TABLE collections ADD COLUMN lazer_id TEXT;
+    "#,
+    // 13 — osu!stable as a source (src/stable.rs): its collections next to lazer's, and its files
+    //      by key (path, size, modification time) → path in its Songs folder
+    r#"
+    ALTER TABLE lazer_collections ADD COLUMN source TEXT NOT NULL DEFAULT 'lazer';
+    CREATE TABLE stable_files (
+        key  TEXT PRIMARY KEY,
+        path TEXT NOT NULL
+    );
+    "#,
+    // 14 — a lazer score's replay file (its hash in lazer's files/), for the playfield
+    r#"
+    ALTER TABLE scores ADD COLUMN replay TEXT;
+    "#,
+    // 15 — library care (src/care.rs): a lazer set's files and lazer's hash of it, a stable set's
+    //      folder, and the size of every file lazer keeps (by its hash: content-addressed)
+    r#"
+    ALTER TABLE sets ADD COLUMN files TEXT NOT NULL DEFAULT '[]';
+    ALTER TABLE sets ADD COLUMN hash TEXT;
+    ALTER TABLE sets ADD COLUMN folder TEXT;
+    CREATE TABLE file_sizes (
+        hash TEXT PRIMARY KEY,
+        size INTEGER NOT NULL
+    );
+    "#,
+    // 16 — library care: the song and background a difficulty names (its .osu's), found or not,
+    //      and what lazer's files are by their first bytes (by hash, like their sizes)
+    r#"
+    ALTER TABLE maps ADD COLUMN audio_file TEXT;
+    ALTER TABLE maps ADD COLUMN bg_file TEXT;
+    CREATE TABLE file_formats (
+        hash   TEXT PRIMARY KEY,
+        format TEXT NOT NULL
+    );
+    "#,
+    // 17 — plays as they happen (src/live.rs): each passed play, read from the replay lazer saves
+    r#"
+    CREATE TABLE live_plays (
+        id                 TEXT PRIMARY KEY,
+        md5                TEXT NOT NULL,
+        mode               INTEGER NOT NULL,
+        player             TEXT NOT NULL DEFAULT '',
+        date               INTEGER NOT NULL,
+        accuracy           REAL NOT NULL,
+        rank               TEXT,
+        score              INTEGER NOT NULL DEFAULT 0,
+        combo              INTEGER NOT NULL DEFAULT 0,
+        mods               TEXT NOT NULL DEFAULT '[]',
+        rate               REAL,
+        statistics         TEXT NOT NULL DEFAULT '{}',
+        maximum_statistics TEXT NOT NULL DEFAULT '{}'
+    );
+    CREATE INDEX live_plays_date ON live_plays(date);
+    CREATE INDEX live_plays_md5 ON live_plays(md5);
+    "#,
+    // 18 — map pools (src/pools.rs): kinds of slot with their mods, and the maps in the slots,
+    // by MD5 like collections (and osu!'s id, for maps that aren't in the library)
+    r#"
+    CREATE TABLE pools (
+        id         TEXT PRIMARY KEY,
+        name       TEXT NOT NULL,
+        mode       INTEGER NOT NULL,
+        keys       INTEGER,
+        categories TEXT NOT NULL DEFAULT '[]',
+        note       TEXT NOT NULL DEFAULT '',
+        created    INTEGER NOT NULL,
+        updated    INTEGER NOT NULL,
+        position   INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE pool_maps (
+        pool_id   TEXT NOT NULL REFERENCES pools(id) ON DELETE CASCADE,
+        slot      TEXT NOT NULL,
+        md5       TEXT,
+        online_id INTEGER,
+        note      TEXT NOT NULL DEFAULT '',
+        meta      TEXT,
+        added     INTEGER NOT NULL,
+        PRIMARY KEY (pool_id, slot)
+    );
+    "#,
+    // 19 — a pool's matches (src/matches.rs): who plays, when, the bans and picks, and the
+    // multiplayer room's games as osu! had them when last asked
+    r#"
+    CREATE TABLE pool_matches (
+        id         TEXT PRIMARY KEY,
+        pool_id    TEXT NOT NULL REFERENCES pools(id) ON DELETE CASCADE,
+        red        TEXT NOT NULL DEFAULT '',
+        blue       TEXT NOT NULL DEFAULT '',
+        at         INTEGER,
+        best_of    INTEGER NOT NULL DEFAULT 7,
+        mp_id      INTEGER,
+        warmups    INTEGER NOT NULL DEFAULT 0,
+        first_pick TEXT,
+        bans       TEXT NOT NULL DEFAULT '[]',
+        picks      TEXT NOT NULL DEFAULT '[]',
+        result     TEXT,
+        fetched    INTEGER,
+        note       TEXT NOT NULL DEFAULT '',
+        created    INTEGER NOT NULL,
+        updated    INTEGER NOT NULL
+    );
+    CREATE INDEX pool_matches_pool ON pool_matches(pool_id);
+    "#,
+    // every try at a map, as tosu shows it (src/attempts.rs, 1.4): passes, fails, quits and
+    // restarts, with how far it got. IF NOT EXISTS: written on the 1.4 branch, whose migrations
+    // may move behind ones that main gets meanwhile.
+    r#"
+    CREATE TABLE IF NOT EXISTS attempts (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        md5          TEXT NOT NULL,
+        mode         INTEGER NOT NULL,
+        client       TEXT NOT NULL DEFAULT '',
+        started      INTEGER NOT NULL,
+        ended        INTEGER NOT NULL,
+        outcome      TEXT NOT NULL,
+        reached      INTEGER NOT NULL,
+        failed_at    INTEGER,
+        first_object INTEGER,
+        last_object  INTEGER,
+        accuracy     REAL NOT NULL,
+        score        INTEGER NOT NULL DEFAULT 0,
+        max_combo    INTEGER NOT NULL DEFAULT 0,
+        misses       INTEGER NOT NULL DEFAULT 0,
+        misses_at    TEXT NOT NULL DEFAULT '[]',
+        mods         TEXT NOT NULL DEFAULT '',
+        rate         REAL NOT NULL DEFAULT 1,
+        pp           REAL,
+        score_id     INTEGER,
+        rank         TEXT,
+        heart        TEXT,
+        hr_avg       REAL,
+        hr_max       INTEGER,
+        hr_min       INTEGER,
+        hr_fast      REAL
+    );
+    CREATE INDEX IF NOT EXISTS attempts_md5 ON attempts(md5);
+    CREATE INDEX IF NOT EXISTS attempts_started ON attempts(started);
+    "#,
+];
+
+pub fn open(path: &Path) -> Result<Connection> {
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let mut conn = Connection::open(path)?;
+    conn.execute_batch(
+        "PRAGMA journal_mode = WAL;
+         PRAGMA synchronous = NORMAL;
+         PRAGMA foreign_keys = ON;
+         PRAGMA temp_store = MEMORY;",
+    )?;
+    migrate(&mut conn)?;
+    ensure_columns(&conn)?;
+    ensure_chart_columns(&conn)?;
+    crate::cloud_scores::ensure_table(&conn)?;
+    Ok(conn)
+}
+
+/// Columns the chart analysis gained in a patch (MSD, 1.4.1): added here rather than by a
+/// migration, so the numbered migrations of the next version's branch stay as they are. Safe to
+/// run every time; the analysis version going up fills them in.
+fn ensure_chart_columns(conn: &Connection) -> Result<()> {
+    let mut st = conn.prepare("SELECT name FROM pragma_table_info('chart_stats')")?;
+    let cols = st.query_map([], |r| r.get::<_, String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
+    if cols.is_empty() {
+        return Ok(());
+    }
+    // Etterna's MSD at 1× (msd.rs) and the skillset it asks most of; at 0.7× to 2.0× (1.5)
+    for (name, kind) in [("msd", "REAL"), ("msd_skill", "TEXT"), ("msd_rates", "TEXT"), ("notes_key", "TEXT"), ("vibro", "INTEGER")] {
+        if !cols.iter().any(|c| c == name) {
+            conn.execute_batch(&format!("ALTER TABLE chart_stats ADD COLUMN {name} {kind}"))?;
+        }
+    }
+    // what plays are worth in Etterna's eyes (osu_scores.rs: Wife% × 10000, rate × 100), 1.5
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS play_ssr (
+            hash    TEXT NOT NULL,
+            rate    INTEGER NOT NULL,
+            wife    INTEGER NOT NULL,
+            version INTEGER NOT NULL,
+            ssr     TEXT,
+            PRIMARY KEY (hash, rate, wife)
+        )",
+    )?;
+    // what vibro.rs found at the rate (0 clean, 1 adjusted, 2 vibro, 3 unrateable)
+    let has_vibro = conn.prepare("SELECT 1 FROM pragma_table_info('play_ssr') WHERE name = 'vibro'")?.exists([])?;
+    if !has_vibro {
+        conn.execute_batch("ALTER TABLE play_ssr ADD COLUMN vibro INTEGER")?;
+    }
+    Ok(())
+}
+
+/// Columns that came to a table after its migration had already run on a development build
+/// (the 1.4 branch's attempts table, before 1.4 is out). Safe to run every time.
+fn ensure_columns(conn: &Connection) -> Result<()> {
+    let mut st = conn.prepare("SELECT name FROM pragma_table_info('attempts')")?;
+    let cols = st.query_map([], |r| r.get::<_, String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
+    if cols.is_empty() {
+        return Ok(());
+    }
+    let later = [
+        ("misses_at", "TEXT NOT NULL DEFAULT '[]'"),
+        // the pulse during a try (heart.rs)
+        ("heart", "TEXT"),
+        ("hr_avg", "REAL"),
+        ("hr_max", "INTEGER"),
+        ("hr_min", "INTEGER"),
+        ("hr_fast", "REAL"),
+        // the beats' spacing during a try and its HRV (1.5)
+        ("heart_rr", "TEXT"),
+        ("hr_hrv", "REAL"),
+    ];
+    for (name, kind) in later {
+        if !cols.iter().any(|c| c == name) {
+            conn.execute_batch(&format!("ALTER TABLE attempts ADD COLUMN {name} {kind}"))?;
+        }
+    }
+    Ok(())
+}
+
+fn migrate(conn: &mut Connection) -> Result<()> {
+    let current: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    for (i, sql) in MIGRATIONS.iter().enumerate().skip(current.max(0) as usize) {
+        let tx = conn.transaction()?;
+        tx.execute_batch(sql)?;
+        tx.pragma_update(None, "user_version", (i + 1) as i64)?;
+        tx.commit()?;
+    }
+    Ok(())
+}
+
+pub fn get_meta(conn: &Connection, key: &str) -> Result<Option<String>> {
+    Ok(conn
+        .query_row("SELECT value FROM meta WHERE key = ?1", [key], |r| r.get(0))
+        .optional()?)
+}
+
+pub fn set_meta(conn: &Connection, key: &str, value: &str) -> Result<()> {
+    conn.execute(
+        "INSERT INTO meta (key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        [key, value],
+    )?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migrations_apply_and_are_idempotent() {
+        let dir = std::env::temp_dir().join(format!("fumen-db-test-{}", std::process::id()));
+        let path = dir.join("t.db");
+        let _ = std::fs::remove_dir_all(&dir);
+        {
+            let conn = open(&path).unwrap();
+            set_meta(&conn, "k", "v").unwrap();
+        }
+        let conn = open(&path).unwrap();
+        assert_eq!(get_meta(&conn, "k").unwrap().as_deref(), Some("v"));
+        let v: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
+        assert_eq!(v as usize, MIGRATIONS.len());
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_early_attempts_table_gets_its_new_columns() {
+        let dir = std::env::temp_dir().join(format!("fumen-db-cols-{}", std::process::id()));
+        let path = dir.join("t.db");
+        let _ = std::fs::remove_dir_all(&dir);
+        {
+            // as the 1.4 branch first made it, without misses_at
+            let conn = open(&path).unwrap();
+            conn.execute_batch("DROP TABLE attempts; CREATE TABLE attempts (id INTEGER PRIMARY KEY, md5 TEXT NOT NULL, misses INTEGER NOT NULL DEFAULT 0);").unwrap();
+        }
+        let conn = open(&path).unwrap();
+        let n: i64 = conn.query_row("SELECT COUNT(*) FROM pragma_table_info('attempts') WHERE name = 'misses_at'", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 1);
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

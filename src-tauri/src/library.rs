@@ -1,0 +1,412 @@
+//! The library snapshot the UI works on.
+//!
+//! The whole library (~5k sets / ~22k difficulties for a big install) is sent once as compact
+//! JSON; the UI filters and sorts it in memory, so typing in the search box never waits on IPC.
+//! Sets and maps reference each other by array index.
+//!
+//! lazer's and stable's sets are in it together; a difficulty that's in both games is lazer's
+//! (stable's copy is left out, and a stable set left without difficulties with it).
+
+use std::collections::{HashMap, HashSet};
+
+use rusqlite::{Connection, OptionalExtension};
+use serde::Serialize;
+
+use crate::analysis;
+use crate::db;
+use crate::error::Result;
+use crate::osu_scores::{self, MapBest};
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Snapshot {
+    source: &'static str,
+    scanned_at: Option<i64>,
+    sets: Vec<SetOut>,
+    maps: Vec<MapOut>,
+    collections: Vec<CollectionOut>,
+    /// The player these local scores belong to (most frequent score owner).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    user: Option<UserOut>,
+    /// lazer's osu!mania settings that the playfield preview follows
+    mania: ManiaSettings,
+}
+
+#[derive(Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct ManiaSettings {
+    /// 1–40; notes take 11485 / speed ms to fall to the judgement line
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scroll_speed: Option<f64>,
+    /// "Down" or "Up"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scroll_direction: Option<String>,
+}
+
+fn mania_settings(conn: &Connection) -> Result<ManiaSettings> {
+    let Some(raw) = db::get_meta(conn, "lazer.maniaSettings")? else { return Ok(ManiaSettings::default()) };
+    let v: serde_json::Value = serde_json::from_str(&raw).unwrap_or_default();
+    Ok(ManiaSettings {
+        scroll_speed: v["ScrollSpeed"].as_str().and_then(|s| s.trim().parse::<f64>().ok()).filter(|s| s.is_finite() && *s > 0.0),
+        scroll_direction: v["ScrollDirection"].as_str().filter(|s| matches!(*s, "Down" | "Up")).map(str::to_owned),
+    })
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UserOut {
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    id: Option<i64>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SetOut {
+    id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    online_id: Option<i64>,
+    status: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    added: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ranked: Option<i64>,
+    title: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    title_unicode: String,
+    artist: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    artist_unicode: String,
+    creator: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    source: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    tags: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bg: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    audio: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    preview: Option<i64>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    protected: bool,
+    /// "stable" for osu!stable's (lazer's: left out)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    from: Option<&'static str>,
+    maps: Vec<u32>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MapOut {
+    set: u32,
+    id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    online_id: Option<i64>,
+    version: String,
+    /// 0 osu, 1 taiko, 2 catch, 3 mania, -1 custom ruleset.
+    mode: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ruleset: Option<String>,
+    status: i64,
+    sr: f64,
+    bpm: f64,
+    /// Drain-inclusive length in ms.
+    length: f64,
+    objects: i64,
+    /// Objects with an end time: long notes in mania, sliders+spinners elsewhere.
+    holds: i64,
+    hp: f64,
+    cs: f64,
+    od: f64,
+    ar: f64,
+    // per-difficulty overrides, only when different from the set's
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bg: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    audio: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    preview: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    played: Option<i64>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    hidden: bool,
+    /// the player's best (local and from osu!) and play count
+    #[serde(skip_serializing_if = "Option::is_none")]
+    best: Option<MapBest>,
+    /// densest two seconds in notes per second (from the chart analysis)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    peak: Option<f64>,
+    /// pattern tags from the chart analysis, space-separated
+    #[serde(skip_serializing_if = "String::is_empty")]
+    patterns: String,
+    /// osu!mania star rating with Half Time / Double Time (Fumen's own calculation)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sr_ht: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sr_dt: Option<f64>,
+    /// osu!mania dan at 1× ("Gamma mid", "Reform 7 high || LN 9 low")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dan: Option<String>,
+    /// Azusa's dan number for 4K rice (Reform 1–10 = 1–10, Alpha = 11 …)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dan_value: Option<f64>,
+    /// pattern category ("Jumpstream", "Chordjacks Tech", "… SV")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    category: Option<String>,
+    /// Etterna's MSD at 1× (osu!mania 4K to 7K) and the skillset it asks most of
+    #[serde(skip_serializing_if = "Option::is_none")]
+    msd: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    msd_skill: Option<String>,
+    /// osu!mania: the notes whatever the speed, the same for rate edits (msd.rs)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    notes_key: Option<String>,
+    /// osu!mania: what vibro.rs finds at 1× (1 adjusted, 2 vibro, 3 unrateable; none when clean)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    vibro: Option<u8>,
+    /// osu!mania: each pattern's share of the chart in percent (stream, jumpstream, handstream,
+    /// chordjack, jacks, ln), from the chart analysis
+    #[serde(skip_serializing_if = "Option::is_none")]
+    shares: Option<[u8; 6]>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CollectionOut {
+    id: String,
+    name: String,
+    maps: Vec<u32>,
+    /// Entries whose difficulty isn't in the library (deleted / never downloaded).
+    missing: usize,
+    /// "stable" for osu!stable's (lazer's: left out)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    from: Option<&'static str>,
+}
+
+pub(crate) fn ruleset_mode(id: Option<i64>, name: Option<&str>) -> i64 {
+    match (id, name) {
+        (Some(i @ 0..=3), _) => i,
+        (_, Some("osu")) => 0,
+        (_, Some("taiko")) => 1,
+        (_, Some("fruits")) => 2,
+        (_, Some("mania")) => 3,
+        _ => -1,
+    }
+}
+
+pub fn snapshot_json(conn: &Connection) -> Result<Vec<u8>> {
+    let scan = |k: &str| -> Result<Option<i64>> { Ok(db::get_meta(conn, k)?.and_then(|v| v.parse().ok())) };
+    let scanned_at = scan("lazer.lastScan")?.max(scan("stable.lastScan")?);
+
+    // difficulties lazer has: stable's copies of them stay out
+    let lazer_md5s: HashSet<String> = conn
+        .prepare("SELECT m.md5 FROM maps m JOIN sets s ON s.id = m.set_id WHERE s.source = 'lazer' AND m.md5 IS NOT NULL")?
+        .query_map([], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+
+    // the player's best per difficulty (by total score), plus play count
+    let best = osu_scores::best_per_map(conn)?;
+
+    let mut sets: Vec<SetOut> = Vec::new();
+    let mut set_index: HashMap<String, u32> = HashMap::new();
+    {
+        let mut st = conn.prepare(
+            "SELECT s.id, s.online_id, s.status, s.date_added, s.date_ranked, s.title, s.title_unicode, s.artist,
+                    s.artist_unicode, s.creator, s.source_text, s.tags, s.bg, s.audio, s.preview_time, s.protected,
+                    s.source
+             FROM sets s
+             WHERE s.source != 'stable' OR EXISTS (
+                 SELECT 1 FROM maps m WHERE m.set_id = s.id AND (m.md5 IS NULL OR m.md5 NOT IN (
+                     SELECT m2.md5 FROM maps m2 JOIN sets s2 ON s2.id = m2.set_id WHERE s2.source = 'lazer' AND m2.md5 IS NOT NULL)))
+             ORDER BY s.date_added DESC, s.id",
+        )?;
+        let rows = st.query_map([], |r| {
+            Ok(SetOut {
+                id: r.get(0)?,
+                online_id: r.get::<_, Option<i64>>(1)?.filter(|v| *v > 0),
+                status: r.get::<_, Option<i64>>(2)?.unwrap_or(-3),
+                added: r.get(3)?,
+                ranked: r.get(4)?,
+                title: r.get(5)?,
+                title_unicode: r.get(6)?,
+                artist: r.get(7)?,
+                artist_unicode: r.get(8)?,
+                creator: r.get(9)?,
+                source: r.get(10)?,
+                tags: r.get(11)?,
+                bg: r.get(12)?,
+                audio: r.get(13)?,
+                preview: r.get(14)?,
+                protected: r.get(15)?,
+                from: (r.get::<_, String>(16)? == "stable").then_some("stable"),
+                maps: Vec::new(),
+            })
+        })?;
+        for row in rows {
+            let mut set = row?;
+            // drop Unicode duplicates of the romanised field to keep the payload small
+            if set.title_unicode == set.title {
+                set.title_unicode.clear();
+            }
+            if set.artist_unicode == set.artist {
+                set.artist_unicode.clear();
+            }
+            set_index.insert(set.id.clone(), sets.len() as u32);
+            sets.push(set);
+        }
+    }
+
+    let mut maps: Vec<MapOut> = Vec::new();
+    let mut md5_index: HashMap<String, u32> = HashMap::new();
+    {
+        let mut st = conn.prepare(
+            "SELECT m.set_id, m.id, m.online_id, m.version, m.ruleset, m.ruleset_id, m.status,
+                    CASE WHEN m.sr IS NULL OR m.sr < 0 THEN c.sr ELSE m.sr END AS sr, m.bpm,
+                    m.length, m.objects, m.end_objects, m.hp, m.cs, m.od, m.ar, m.md5, m.bg, m.audio,
+                    m.preview_time, m.last_played, m.hidden, c.nps_peak, c.tags, c.sr_ht, c.sr_dt,
+                    c.dan, c.dan_value, c.category, c.patterns, c.msd, c.msd_skill, c.notes_key, c.vibro
+             FROM maps m LEFT JOIN chart_stats c ON c.hash = m.hash AND c.version = ?1
+             ORDER BY m.set_id, m.ruleset_id, sr",
+        )?;
+        let mut rows = st.query([analysis::VERSION])?;
+        while let Some(r) = rows.next()? {
+            let set_id: String = r.get(0)?;
+            let Some(&si) = set_index.get(&set_id) else { continue };
+            let set = &sets[si as usize];
+            let ruleset: Option<String> = r.get(4)?;
+            let mode = ruleset_mode(r.get(5)?, ruleset.as_deref());
+            let md5: Option<String> = r.get(16)?;
+            if set.from.is_some() && md5.as_ref().is_some_and(|h| lazer_md5s.contains(h)) {
+                continue;
+            }
+            let bg: Option<String> = r.get(17)?;
+            let audio: Option<String> = r.get(18)?;
+            let preview: Option<i64> = r.get(19)?;
+            let differs_audio = audio.is_some() && audio != set.audio;
+            let map = MapOut {
+                set: si,
+                id: r.get(1)?,
+                online_id: r.get::<_, Option<i64>>(2)?.filter(|v| *v > 0),
+                version: r.get(3)?,
+                mode,
+                ruleset: if mode < 0 { ruleset } else { None },
+                status: r.get::<_, Option<i64>>(6)?.unwrap_or(-3),
+                sr: r.get::<_, Option<f64>>(7)?.unwrap_or(0.0),
+                bpm: r.get::<_, Option<f64>>(8)?.unwrap_or(0.0),
+                length: r.get::<_, Option<f64>>(9)?.unwrap_or(0.0),
+                objects: r.get::<_, Option<i64>>(10)?.unwrap_or(0),
+                holds: r.get::<_, Option<i64>>(11)?.unwrap_or(0),
+                hp: r.get::<_, Option<f64>>(12)?.unwrap_or(0.0),
+                cs: r.get::<_, Option<f64>>(13)?.unwrap_or(0.0),
+                od: r.get::<_, Option<f64>>(14)?.unwrap_or(0.0),
+                ar: r.get::<_, Option<f64>>(15)?.unwrap_or(0.0),
+                best: md5.as_ref().and_then(|h| best.get(h).cloned()),
+                bg: if bg.is_some() && bg != set.bg { bg } else { None },
+                preview: if differs_audio || (preview.is_some() && preview != set.preview) { preview } else { None },
+                audio: if differs_audio { audio } else { None },
+                played: r.get(20)?,
+                hidden: r.get(21)?,
+                peak: r.get::<_, Option<f64>>(22)?.map(|v| (v * 10.0).round() / 10.0),
+                patterns: r.get::<_, Option<String>>(23)?.unwrap_or_default(),
+                // stored as f32: round away the float noise
+                sr_ht: r.get::<_, Option<f64>>(24)?.map(|v| (v * 100.0).round() / 100.0),
+                sr_dt: r.get::<_, Option<f64>>(25)?.map(|v| (v * 100.0).round() / 100.0),
+                dan: r.get(26)?,
+                dan_value: r.get::<_, Option<f64>>(27)?.map(|v| (v * 100.0).round() / 100.0),
+                category: r.get(28)?,
+                shares: if mode == 3 { r.get::<_, Option<String>>(29)?.as_deref().and_then(analysis::shares_percent) } else { None },
+                msd: r.get::<_, Option<f64>>(30)?.map(|v| (v * 100.0).round() / 100.0),
+                msd_skill: r.get(31)?,
+                notes_key: r.get(32)?,
+                vibro: r.get::<_, Option<u8>>(33)?.filter(|&v| v > 0),
+            };
+            let mi = maps.len() as u32;
+            if let Some(h) = md5 {
+                md5_index.entry(h).or_insert(mi);
+            }
+            sets[si as usize].maps.push(mi);
+            maps.push(map);
+        }
+    }
+    // sets without difficulties are useless in the UI
+    // (indices must stay stable, so they stay in the array with an empty map list)
+
+    let mut collections: Vec<CollectionOut> = Vec::new();
+    {
+        // lazer's, then stable's
+        let mut st = conn.prepare("SELECT id, name, source FROM lazer_collections ORDER BY source = 'stable', position")?;
+        let cols: Vec<(String, String, String)> =
+            st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<Result<_, _>>()?;
+        let mut items = conn.prepare(
+            "SELECT md5 FROM lazer_collection_items WHERE collection_id = ?1 ORDER BY position",
+        )?;
+        for (id, name, source) in cols {
+            let md5s: Vec<String> =
+                items.query_map([&id], |r| r.get(0))?.collect::<Result<_, _>>()?;
+            let from = (source == "stable").then_some("stable");
+            let mut out = CollectionOut { id, name, maps: Vec::new(), missing: 0, from };
+            for h in md5s {
+                match md5_index.get(&h) {
+                    Some(&mi) => out.maps.push(mi),
+                    None => out.missing += 1,
+                }
+            }
+            collections.push(out);
+        }
+    }
+
+    let user = conn
+        .query_row(
+            "SELECT user, MAX(user_id), COUNT(*) AS n FROM scores
+             WHERE user IS NOT NULL AND user != '' GROUP BY user ORDER BY n DESC LIMIT 1",
+            [],
+            |r| Ok(UserOut { name: r.get(0)?, id: r.get::<_, Option<i64>>(1)?.filter(|v| *v > 1) }),
+        )
+        .optional()?;
+
+    let mania = mania_settings(conn)?;
+    Ok(serde_json::to_vec(&Snapshot { source: "lazer", scanned_at, sets, maps, collections, user, mania })?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stable_copies_of_lazers_stay_out() {
+        let dir = std::env::temp_dir().join(format!("fumen-snap-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let conn = crate::db::open(&dir.join("f.db")).unwrap();
+        conn.execute_batch(
+            "INSERT INTO sets (id, source, title) VALUES ('L', 'lazer', 'both'), ('S1', 'stable', 'both'), ('S2', 'stable', 'mixed');
+             INSERT INTO maps (id, set_id, md5, ruleset_id) VALUES ('l1', 'L', 'h1', 3), ('s1', 'S1', 'h1', 3),
+                 ('s2', 'S2', 'h1', 3), ('s3', 'S2', 'h3', 3);
+             INSERT INTO lazer_collections (id, name, position, source) VALUES ('c', 'mine', 0, 'stable');
+             INSERT INTO lazer_collection_items (collection_id, md5, position) VALUES ('c', 'h1', 0), ('c', 'h3', 1);",
+        )
+        .unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&snapshot_json(&conn).unwrap()).unwrap();
+        let ids = |k: &str| v[k].as_array().unwrap().iter().map(|x| x["id"].as_str().unwrap().to_string()).collect::<Vec<_>>();
+        let mut sets = ids("sets");
+        sets.sort();
+        assert_eq!(sets, ["L", "S2"]);
+        let mut maps = ids("maps");
+        maps.sort();
+        assert_eq!(maps, ["l1", "s3"]);
+        let s2 = v["sets"].as_array().unwrap().iter().find(|s| s["id"] == "S2").unwrap();
+        assert_eq!(s2["from"], "stable");
+        assert!(v["sets"].as_array().unwrap().iter().find(|s| s["id"] == "L").unwrap().get("from").is_none());
+        let c = &v["collections"][0];
+        assert_eq!((c["from"].as_str(), c["maps"].as_array().unwrap().len(), c["missing"].as_u64()), (Some("stable"), 2, Some(0)));
+        drop(conn);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn modes() {
+        assert_eq!(ruleset_mode(Some(3), Some("mania")), 3);
+        assert_eq!(ruleset_mode(None, Some("taiko")), 1);
+        assert_eq!(ruleset_mode(Some(42), Some("rush")), -1);
+    }
+}

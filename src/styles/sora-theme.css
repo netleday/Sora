@@ -1,0 +1,278 @@
+/* sora-theme.css — Sora Midnight Violet anime theme, glassmorphism, particles & mascot */
+:root,
+:root[data-theme="dark"] {
+  --bg: #09070f;
+  --surface: rgba(22, 16, 38, var(--sora-panel-opacity, 0.78));
+  --surface-2: rgba(30, 22, 50, 0.78);
+  --surface-3: rgba(42, 30, 68, 0.85);
+  --border: rgba(199, 125, 255, 0.2);
+  --accent: #9d4edd;
+  --accent-ink: #c77dff;
+  --sora-pink: #ff6bcb;
+}
+
+body {
+  background: radial-gradient(circle at 20% 10%, #160d29 0%, #09070f 65%);
+}
+
+.sidebar,
+.player-bar,
+.sora-modal,
+.roulette-result-card,
+.roulette-reel-box,
+.skin-card,
+.tile {
+  backdrop-filter: blur(16px);
+}
+
+.tile:hover,
+.skin-card:hover,
+.btn-primary:hover,
+.nav-item.active {
+  box-shadow: 0 0 22px rgba(157, 78, 221, 0.34);
+}
+
+.btn,
+.nav-item,
+.tile,
+.skin-card,
+.sora-modal {
+  transition: transform 0.24s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.22s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.view-enter {
+  animation: sora-view-pop 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes sora-view-pop {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.sora-modal {
+  animation: sora-modal-spring 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes sora-modal-spring {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Sidebar author footer */
+.sora-side-author {
+  display: block;
+  text-align: center;
+  font-size: 11px;
+  color: rgba(199, 125, 255, 0.72);
+  text-decoration: none;
+  padding: 6px 4px 2px;
+  transition: color 0.16s;
+}
+.sora-side-author:hover {
+  color: #ff6bcb;
+}
+
+/* Floating ambient particles */
+.sora-particles {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+.sora-particle {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #ff6bcb 0%, rgba(157, 78, 221, 0.2) 70%, transparent 100%);
+  opacity: 0.45;
+  animation: sora-float 14s linear infinite;
+}
+@keyframes sora-float {
+  0% {
+    transform: translateY(105vh) scale(0.7);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.5;
+  }
+  85% {
+    opacity: 0.45;
+  }
+  100% {
+    transform: translateY(-10vh) scale(1.25);
+    opacity: 0;
+  }
+}
+
+/* Interactive Chibi Mascot */
+.sora-mascot {
+  position: fixed;
+  right: 18px;
+  bottom: 84px;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  pointer-events: none;
+}
+.sora-mascot-btn {
+  pointer-events: auto;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  filter: drop-shadow(0 8px 20px rgba(157, 78, 221, 0.45));
+  animation: sora-breathe 3.4s ease-in-out infinite;
+}
+.sora-mascot-btn.hop {
+  animation: sora-hop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes sora-breathe {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+@keyframes sora-hop {
+  0% { transform: translateY(0) scale(1); }
+  45% { transform: translateY(-18px) scale(1.08); }
+  100% { transform: translateY(0) scale(1); }
+}
+.sora-mascot-bubble {
+  margin-bottom: 6px;
+  padding: 7px 12px;
+  border-radius: 12px;
+  background: rgba(22, 16, 38, 0.94);
+  border: 1px solid rgba(199, 125, 255, 0.45);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+  white-space: nowrap;
+}
+.sora-mascot-hearts {
+  position: relative;
+  width: 92px;
+  height: 0;
+}
+.sora-spark {
+  position: absolute;
+  left: 46px;
+  top: -10px;
+  width: 10px;
+  height: 10px;
+  background: #ff6bcb;
+  transform: rotate(45deg);
+  animation: sora-spark-up 0.9s ease-out var(--delay, 0ms) forwards;
+}
+.sora-spark::before,
+.sora-spark::after {
+  content: "";
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ff6bcb;
+}
+.sora-spark::before { left: -5px; top: 0; }
+.sora-spark::after { left: 0; top: -5px; }
+@keyframes sora-spark-up {
+  0% { opacity: 1; transform: translate(0, 0) rotate(45deg) scale(0.8); }
+  100% { opacity: 0; transform: translate(var(--dx, 0px), -54px) rotate(45deg) scale(1.3); }
+}
+
+/* Interactive Shimeji Anime Mascot */
+.sora-shimeji {
+  position: fixed;
+  z-index: 140;
+  pointer-events: auto;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+  transition: transform 0.12s ease;
+}
+.sora-shimeji:active {
+  cursor: grabbing;
+}
+.shimeji-body {
+  height: var(--mascot-h, 160px);
+  transform-origin: bottom center;
+  animation: sora-breathe 3.4s ease-in-out infinite;
+  filter: drop-shadow(0 8px 18px rgba(157, 78, 221, 0.45));
+}
+.shimeji-body img {
+  height: 100%;
+  width: auto;
+  display: block;
+  pointer-events: none;
+}
+.sora-shimeji[data-state="walk"] .shimeji-body {
+  animation: shimeji-walk 0.42s ease-in-out infinite;
+}
+.sora-shimeji[data-state="sit"] .shimeji-body {
+  animation: shimeji-sit 2.2s ease-in-out infinite;
+}
+.sora-shimeji[data-state="sleep"] .shimeji-body {
+  animation: shimeji-sleep 4s ease-in-out infinite;
+  opacity: 0.9;
+}
+.sora-shimeji[data-state="drag"] .shimeji-body {
+  animation: none;
+  transform: rotate(-6deg) scale(1.04);
+}
+@keyframes shimeji-walk {
+  0%, 100% { transform: translateY(0) rotate(-2deg); }
+  50% { transform: translateY(-6px) rotate(2deg); }
+}
+@keyframes shimeji-sit {
+  0%, 100% { transform: translateY(0) scaleY(0.96); }
+  50% { transform: translateY(-2px) scaleY(0.98) rotate(1.5deg); }
+}
+@keyframes shimeji-sleep {
+  0%, 100% { transform: rotate(-12deg) translateY(6px); }
+  50% { transform: rotate(-10deg) translateY(8px) scale(0.99); }
+}
+.shimeji-bubble {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  padding: 7px 12px;
+  border-radius: 12px;
+  background: rgba(18, 13, 34, 0.95);
+  border: 1px solid rgba(199, 125, 255, 0.5);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+.shimeji-zzz {
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 13px;
+  font-weight: 800;
+  color: #c77dff;
+  animation: sora-breathe 2s ease-in-out infinite;
+  pointer-events: none;
+}
+.shimeji-hearts {
+  position: relative;
+  width: 100%;
+  height: 0;
+  pointer-events: none;
+}

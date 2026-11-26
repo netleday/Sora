@@ -1,0 +1,516 @@
+[
+  {
+    "version": "1.5.4",
+    "date": "2026-11-25",
+    "en": [
+      "Fix: A chart Etterna's calculator can't handle no longer crashes Fumen while it analyses the library, which could also keep Fumen from starting again. That chart just has no MSD now."
+    ],
+    "de": [
+      "Fix: Eine Chart, mit der Etternas Rechner nicht klarkommt, lässt Fumen beim Analysieren der Library nicht mehr abstürzen. Das konnte auch verhindern, dass Fumen wieder startet. Die Chart hat jetzt einfach keine MSD."
+    ]
+  },
+  {
+    "version": "1.5.3",
+    "date": "2026-11-25",
+    "en": [
+      "Changed: Fumen keeps to the limits osu.direct sets for each computer: at most 180 set downloads an hour and fewer requests at once. When a mirror says its limit is used up, Fumen waits until it fills up again. Big imports lean more on the other mirrors."
+    ],
+    "de": [
+      "Geändert: Fumen hält sich an die Limits, die osu.direct für jeden Computer setzt: höchstens 180 Set-Downloads pro Stunde und weniger Anfragen auf einmal. Sagt ein Mirror, dass sein Limit aufgebraucht ist, wartet Fumen, bis es wieder voll ist. Große Importe stützen sich mehr auf die anderen Mirrors."
+    ]
+  },
+  {
+    "version": "1.5.2",
+    "date": "2026-11-24",
+    "en": [
+      "New: The Skills page tells you when some of your osu!mania passes are on charts you don't have, like top plays from another PC, and downloads them with one button. Then they count.",
+      "Fix: Dropdowns in dialogs, like the skillset in New goal, open in front of the dialog again."
+    ],
+    "de": [
+      "Neu: Die Skills-Seite sagt dir, wenn osu!mania Passes auf Charts liegen, die du nicht hast, etwa Top Plays von einem anderen PC, und lädt sie mit einem Button herunter. Dann zählen sie mit.",
+      "Fix: Dropdowns in Dialogen, wie das Skillset bei Neues Ziel, gehen wieder vor dem Dialog auf."
+    ]
+  },
+  {
+    "version": "1.5.1",
+    "date": "2026-11-24",
+    "en": [
+      "New: Browse has the osu!lazer and osu!stable switch too, while imports into osu!stable are turned on in Settings."
+    ],
+    "de": [
+      "Neu: Auch Browse hat den Schalter für osu!lazer und osu!stable, solange Importe in osu!stable in den Einstellungen an sind."
+    ]
+  },
+  {
+    "version": "1.5.0",
+    "date": "2026-11-24",
+    "en": [
+      "New: Storyboards in the visualizer. A map's storyboard plays in place of the cover, with its background and video under it. You can turn it off in the visualizer's settings.",
+      "New: Your HRV for every try, with a heart rate monitor that sends the spacing of your beats (chest straps like Moofit's do). The pulse graph gets a second curve and marks where your nerves kicked in: your pulse climbing while your HRV drops. History's Heart rate tab shows your HRV too, for each map and for passes against the rest.",
+      "Changed: The Skills page is back, with Etterna's skillsets. Every osu!mania pass is rated with MinaCalc for the accuracy you got, and your skills, overall, goals and practice suggestions go by those numbers. Skill goals from before don't carry over. As in Etterna, a map counts with its two best rates, and rate edits of it count as that map, so playing one song at several speeds doesn't add up.",
+      "New: You can leave a map out of your skills, say one MinaCalc rates too high. A pass worth far more than your skill is marked as looking overrated, on the Skills page and on its score page.",
+      "New: Fumen looks for parts no hand plays as written, like jacks or trills past a finger's speed (vibro), at the rate you played. If they're a small part of the map they're cut out before rating, otherwise the pass doesn't count for your skills. The Skills page lists those maps, and practice doesn't suggest them. The rules come from mania-tracker.",
+      "New: After an osu!mania pass, its score page shows which skills went up and by how much. The Skills page updates right after a pass, and every skillset and overall can show its graph over time.",
+      "New: A Your week tab in History. It puts your plays into sittings and shows when you played, for how long, which skills went up and which goals came closer, next to the week before. Fails and restarts count too while Fumen follows osu! through tosu. Click a sitting to see its maps.",
+      "New: Scores in the cloud, in Settings › osu!. Turned on, Fumen keeps your plays from osu!lazer and osu!stable, their replays and the list of your maps on its server under your osu! login, and saves new ones after you play. On a new PC or after setting Fumen up again, your history and skills come back, the replays play again, and Download missing maps gets your maps back. It is free, holds up to 1 GB, and Delete everything in the cloud removes all of it.",
+      "New: Searching and downloading maps, logging in with osu!, the cloud and comparing are now online features with terms, shown once at the first start and once to everyone after this update. With them accepted, Fumen checks at each start whether it's blocked, and that check also counts the start. With Only local, all of it stays off and everything else in Fumen works as before. If you were logged in and pick Only local, Fumen logs you out.",
+      "New: Settings › About has a switch for the online features and a link to the privacy page.",
+      "Fix: On Windows, following osu! through tosu never got any data, although Fumen found tosu and showed it running. tosu turned Fumen's window away. Fumen now puts itself on tosu's allowed addresses and starts tosu again if it has to."
+    ],
+    "de": [
+      "Neu: Storyboards im Visualizer. Das Storyboard einer Map läuft statt des Covers, mit Hintergrund und Video darunter. Abschalten geht in den Einstellungen des Visualizers.",
+      "Neu: Deine HRV bei jedem Versuch, wenn dein Pulsmesser den Abstand deiner Herzschläge sendet (Brustgurte wie die von Moofit tun das). Die Pulskurve bekommt eine zweite Linie und zeigt, wo deine Nerven eingesetzt haben: Der Puls steigt, während die HRV fällt. Der Puls-Tab in der History zeigt deine HRV auch, für jede Map und für Passes im Vergleich zum Rest.",
+      "Geändert: Die Skills-Seite ist zurück, mit den Skillsets aus Etterna. Jeder osu!mania-Pass wird mit MinaCalc für deine Accuracy bewertet, und deine Skills, Overall, Ziele und Übungsvorschläge richten sich danach. Alte Skill-Ziele werden nicht übernommen. Wie in Etterna zählt eine Map mit ihren zwei besten Rates, und Rate-Edits zählen als diese Map, dasselbe Lied in mehreren Tempos summiert sich also nicht.",
+      "Neu: Du kannst eine Map aus deinen Skills nehmen, etwa eine, die MinaCalc zu hoch bewertet. Ein Pass, der weit mehr wert ist als dein Skill, wird als wohl überbewertet markiert, auf der Skills-Seite und auf seiner Score-Seite.",
+      "Neu: Fumen sucht nach Stellen, die keine Hand so spielt, wie sie geschrieben sind, etwa Jacks oder Trills schneller, als ein Finger kann (Vibro), bei der Rate, die du gespielt hast. Sind sie nur ein kleiner Teil der Map, werden sie vor der Bewertung herausgeschnitten, sonst zählt der Pass nicht für deine Skills. Die Skills-Seite listet diese Maps auf, und Übungsvorschläge lassen sie aus. Die Regeln stammen von mania-tracker.",
+      "Neu: Nach einem osu!mania-Pass zeigt die Score-Seite, welche Skills gestiegen sind und um wie viel. Die Skills-Seite aktualisiert sich direkt nach einem Pass, und jedes Skillset und Overall kann seinen Verlauf als Graph zeigen.",
+      "Neu: Ein Tab Deine Woche im Verlauf. Er fasst deine Plays zu Sitzungen zusammen und zeigt, wann und wie lange du gespielt hast, welche Skills gestiegen und welche Ziele näher gekommen sind, neben der Woche davor. Fails und Neustarts zählen mit, solange Fumen osu! über tosu folgt. Ein Klick auf eine Sitzung zeigt ihre Maps.",
+      "Neu: Scores in der Cloud, unter Einstellungen › osu!. Eingeschaltet hält Fumen deine Plays aus osu!lazer und osu!stable, ihre Replays und die Liste deiner Maps auf seinem Server unter deiner osu!-Anmeldung und speichert neue nach dem Spielen. Auf einem neuen PC oder nach einer Neuinstallation sind dein Verlauf und deine Skills wieder da, die Replays laufen wieder, und Fehlende Maps laden holt deine Maps zurück. Es ist kostenlos, fasst bis 1 GB, und Alles in der Cloud löschen entfernt alles.",
+      "Neu: Maps suchen und herunterladen, die Anmeldung mit osu!, die Cloud und der Vergleich sind jetzt Online-Funktionen mit Nutzungsbedingungen. Die zeigt Fumen einmal beim ersten Start und nach diesem Update einmal allen. Nimmst du sie an, prüft Fumen bei jedem Start, ob es gesperrt ist, und zählt dabei auch den Start. Mit Nur lokal bleibt das alles aus, und alles andere in Fumen funktioniert wie bisher. Warst du angemeldet und wählst Nur lokal, meldet Fumen dich ab.",
+      "Neu: Unter Einstellungen › Über gibt es einen Schalter für die Online-Funktionen und einen Link zur Datenschutzseite.",
+      "Fix: Unter Windows kamen über tosu nie Daten an, obwohl Fumen tosu gefunden und als laufend angezeigt hat. tosu hat Fumens Fenster abgewiesen. Jetzt trägt sich Fumen bei tosu als erlaubte Adresse ein und startet tosu neu, falls nötig."
+    ]
+  },
+  {
+    "version": "1.4.3",
+    "date": "2026-11-23",
+    "en": [
+      "Changed: When a download mirror has trouble, Fumen's website can now tell every Fumen to go easy on it or leave it out for a while, without an update."
+    ],
+    "de": [
+      "Geändert: Wenn ein Download-Mirror Probleme hat, kann Fumens Website jetzt jedem Fumen sagen, ihn zu schonen oder eine Weile auszulassen, ohne Update."
+    ]
+  },
+  {
+    "version": "1.4.2",
+    "date": "2026-11-22",
+    "en": [
+      "Fix: Downloads are much faster. One very slow mirror held them up, and now it only gets the sets the other mirrors don't have.",
+      "Fix: Fumen keeps to the download mirrors' limits. Comparing with another player could ask a mirror for files faster than it allows, and a mirror that says it's busy is now left alone everywhere in Fumen."
+    ],
+    "de": [
+      "Fix: Downloads sind deutlich schneller. Ein sehr langsamer Mirror hat sie ausgebremst, jetzt bekommt er nur noch Maps, die die anderen Mirrors nicht haben.",
+      "Fix: Fumen hält sich an die Limits der Download-Mirrors. Beim Vergleich mit anderen Spielern konnte Fumen einen Mirror schneller nach Dateien fragen, als er erlaubt, und ein Mirror, der sagt, dass er ausgelastet ist, wird jetzt überall in Fumen in Ruhe gelassen."
+    ]
+  },
+  {
+    "version": "1.4.1",
+    "date": "2026-11-21",
+    "en": [
+      "New: MSD, Etterna's difficulty rating, for osu!mania 4K to 7K. It shows next to the dan at any rate, and you can search with msd>25 or skillset=jackspeed and sort by it.",
+      "Fix: Background videos play on maps that name them only in their storyboard file."
+    ],
+    "de": [
+      "Neu: MSD, die Schwierigkeit aus Etterna, für osu!mania 4K bis 7K. Steht neben dem Dan, bei jeder Rate, und lässt sich mit msd>25 oder skillset=jackspeed suchen und sortieren.",
+      "Fix: Hintergrundvideos laufen auch bei Maps, die sie nur in ihrer Storyboard-Datei nennen."
+    ]
+  },
+  {
+    "version": "1.4.0",
+    "date": "2026-11-15",
+    "en": [
+      "New: Follow osu! through tosu. The visualizer opens when a map starts, and a pass opens its score.",
+      "New: Fumen finds tosu and can start it together with osu!.",
+      "New: Every try counts, fails and quits too, with how far you got.",
+      "New: Practise the part where you failed in one click, and see where most tries end.",
+      "New: Stage reacts to your play: combo, misses, breaks and low health.",
+      "New: Fumen in OBS. The visualizer, a live overlay, a song card and a session card as browser sources, scenes that switch with osu! and clips of your best moments.",
+      "New: Judgement counter and key overlay for the live overlay.",
+      "New: Open in osu! on a set's page and in a map's menu.",
+      "New: While osu!lazer is open, downloaded beatmaps go straight into it.",
+      "New: Beatmaps you add in osu!lazer show up in Fumen right away.",
+      "New: Song select on your second screen. The map you pick in osu! opens in Fumen with its patterns, your best, and stars and pp at your mods.",
+      "New: Discord status. Your friends see the map you play with its cover, your accuracy, combo and pp, the chart's patterns and dan, and buttons to the map and to Fumen. Without osu!, the song Fumen plays.",
+      "New: Heart rate monitors over Bluetooth, like Moofit's. Your pulse during each try, after the play and in History, and on the live overlay, also while you pick a map.",
+      "Changed: Settings are split into categories, listed on the side, with a search."
+    ],
+    "de": [
+      "Neu: osu! folgen über tosu. Der Visualizer öffnet sich, wenn eine Map startet, und ein Pass öffnet seinen Score.",
+      "Neu: Fumen findet tosu und kann es zusammen mit osu! starten.",
+      "Neu: Jeder Versuch zählt, auch Fails und Abbrüche, mit wie weit du gekommen bist.",
+      "Neu: Die Stelle, an der du gefailt bist, mit einem Klick üben, und sehen, wo die meisten Versuche enden.",
+      "Neu: Stage reagiert auf dein Spiel: Combo, Misses, Combobreaks und wenig Leben.",
+      "Neu: Fumen in OBS. Visualizer, Live-Overlay, Song-Karte und Session-Karte als Browserquellen, Szenen, die mit osu! wechseln, und Clips deiner besten Momente.",
+      "Neu: Judgement-Zähler und Tasten-Overlay fürs Live-Overlay.",
+      "Neu: In osu! öffnen, auf der Seite eines Sets und im Menü einer Map.",
+      "Neu: Ist osu!lazer offen, gehen heruntergeladene Beatmaps direkt hinein.",
+      "Neu: Beatmaps, die du in osu!lazer hinzufügst, tauchen sofort in Fumen auf.",
+      "Neu: Songauswahl auf dem zweiten Bildschirm. Die Map, die du in osu! aussuchst, öffnet sich in Fumen mit ihren Patterns, deiner Bestleistung und Sternen und pp bei deinen Mods.",
+      "Neu: Discord-Status. Deine Freunde sehen die Map, die du spielst, mit Cover, deiner Accuracy, Combo und pp, den Patterns und dem Dan des Charts und Buttons zur Map und zu Fumen. Ohne osu! den Song, den Fumen abspielt.",
+      "Neu: Pulsmesser über Bluetooth, etwa von Moofit. Dein Puls bei jedem Versuch, nach dem Play und im Verlauf, und im Live-Overlay, auch während du eine Map aussuchst.",
+      "Geändert: Die Einstellungen sind in Kategorien aufgeteilt, mit einer Liste daneben und einer Suche."
+    ]
+  },
+  {
+    "version": "1.3.21",
+    "date": "2026-11-11",
+    "en": [
+      "Fix: Visualizer now plays most .avi and .flv beatmap videos too.",
+      "Fix: Beatmap video also shows with the Blurred background."
+    ],
+    "de": [
+      "Fix: Der Visualizer spielt jetzt auch die meisten Beatmap-Videos im Format .avi und .flv ab.",
+      "Fix: Das Beatmap-Video ist jetzt auch mit dem Hintergrund Unscharf zu sehen."
+    ]
+  },
+  {
+    "version": "1.3.20",
+    "date": "2026-11-08",
+    "en": [
+      "Fix: Updated libraries with known security issues (zip, rustls)."
+    ],
+    "de": [
+      "Fix: Bibliotheken mit bekannten Sicherheitslücken aktualisiert (zip, rustls)."
+    ]
+  },
+  {
+    "version": "1.3.19",
+    "date": "2026-11-08",
+    "en": [
+      "New: Play button in the sidebar to start or close osu! (lazer or stable).",
+      "New: Close osu!lazer button where adding or deleting beatmaps needs it closed.",
+      "New: Visualizer plays the beatmap video if there is one.",
+      "New: Stage is the default visualizer style, with a cleaner look.",
+      "Changed: Back button in fullscreen instead of the fullscreen icon.",
+      "Fix: Replay hitsounds now match the replay.",
+      "Fix: Notes per second graph no longer gets squashed in the playfield."
+    ],
+    "de": [
+      "Neu: Play-Knopf in der Seitenleiste, startet oder schließt osu! (lazer oder stable).",
+      "Neu: Knopf zum Schließen von osu!lazer, wo Hinzufügen oder Löschen es braucht.",
+      "Neu: Der Visualizer spielt das Video der Beatmap ab, wenn es eins gibt.",
+      "Neu: Stage ist der Standard-Stil im Visualizer, mit aufgeräumterem Look.",
+      "Geändert: Zurück-Knopf im Vollbild statt des Vollbild-Symbols.",
+      "Fix: Replay-Hitsounds passen jetzt zum Replay.",
+      "Fix: Der Graph der Noten pro Sekunde wird im Playfield nicht mehr zusammengedrückt."
+    ]
+  },
+  {
+    "version": "1.3.18",
+    "date": "2026-10-27",
+    "en": [
+      "Linux is now on the website for everyone, marked as in testing. fumen.dertesti.dev/linux explains how to install it and what to send when it runs slowly.",
+      "Render test: a new \"Run all and copy report\" button goes through every test by itself and copies the results together with your system, graphics card and driver.",
+      "Frame meter: Ctrl+Shift+F12 in fullscreen runs all eight meter tests one after another and copies a report the same way."
+    ],
+    "de": [
+      "Linux gibt es jetzt für alle auf der Website, als Testversion markiert. Unter fumen.dertesti.dev/linux steht, wie man es installiert und was man schicken soll, wenn es langsam läuft.",
+      "Rendertest: Der neue Knopf \"Run all and copy report\" geht alle Tests von selbst durch und kopiert die Ergebnisse zusammen mit System, Grafikkarte und Treiber.",
+      "Frame-Meter: Strg+Umschalt+F12 im Vollbild lässt alle acht Tests nacheinander laufen und kopiert genauso einen Bericht."
+    ]
+  },
+  {
+    "version": "1.3.17",
+    "date": "2026-10-25",
+    "en": [
+      "Playfield: with skins that animate their follow points (the lines between circles) or the slider follow circle, the animation ran at 60 frames a second and looked like flickering. It now runs at the skin's own frame rate like in osu!lazer, or once a second when the skin doesn't set one."
+    ],
+    "de": [
+      "Playfield: Bei Skins mit animierten Follow Points (die Linien zwischen den Circles) oder animiertem Slider-Follow-Circle lief die Animation mit 60 Bildern pro Sekunde und sah aus wie Flackern. Jetzt läuft sie wie in osu!lazer mit der Framerate des Skins, oder einmal pro Sekunde, wenn der Skin keine angibt."
+    ]
+  },
+  {
+    "version": "1.3.16",
+    "date": "2026-10-24",
+    "en": [
+      "Playfield: it now keeps its own smooth clock between the times the song reports. On Linux those come in steps and sometimes a bit back, which made sliders and the lines between circles flicker. The frame meter shows how often the song's time went back."
+    ],
+    "de": [
+      "Playfield: Es hat jetzt eine eigene gleichmäßige Uhr zwischen den Zeiten, die der Song meldet. Unter Linux kommen die stufenweise und manchmal ein Stück zurück, deshalb haben Slider und die Linien zwischen den Circles geflackert. Der Frame-Meter zeigt, wie oft die Songzeit zurückgesprungen ist."
+    ]
+  },
+  {
+    "version": "1.3.15",
+    "date": "2026-10-24",
+    "en": [
+      "Linux: canvases are drawn at full size again. Scaling them up cost more there than the pixels saved, so the playfield dropped back to 12 fps in 1.3.14. The faster visualizer background stays."
+    ],
+    "de": [
+      "Linux: Canvases werden wieder in voller Größe gezeichnet. Das Hochskalieren hat dort mehr gekostet als die gesparten Pixel, deshalb ist das Playfield in 1.3.14 wieder auf 12 fps gefallen. Der schnellere Visualizer-Hintergrund bleibt."
+    ]
+  },
+  {
+    "version": "1.3.14",
+    "date": "2026-10-24",
+    "en": [
+      "Linux: the visualizer puts its background together once instead of every frame, and canvases there get at most a Full HD screen's worth of pixels. On big screens that makes the visualizer several times faster, and busy parts of the playfield run better too.",
+      "New test in the frame meter (Ctrl+F12): no bitmaps. It should tell us why held sliders flicker on Linux."
+    ],
+    "de": [
+      "Linux: Der Visualizer baut seinen Hintergrund einmal zusammen statt jedes Bild neu, und Canvases bekommen dort höchstens so viele Pixel wie ein Full-HD-Bildschirm. Auf großen Bildschirmen ist der Visualizer dadurch um ein Vielfaches schneller, und volle Stellen im Playfield laufen auch besser.",
+      "Neuer Test im Frame-Meter (Strg+F12): no bitmaps. Damit finden wir raus, warum gehaltene Slider unter Linux flackern."
+    ]
+  },
+  {
+    "version": "1.3.13",
+    "date": "2026-10-24",
+    "en": [
+      "Linux: found it! Every extra layer the size of the window halves the frame rate there. Fumen had a few of those stacked in fullscreen, including the app's background still sitting behind it. They're gone now, so fullscreen should run a lot smoother."
+    ],
+    "de": [
+      "Linux: gefunden! Jede zusätzliche fenstergroße Ebene halbiert dort die Bildrate. Fumen hatte im Vollbild ein paar davon übereinander, unter anderem den Hintergrund der App, der noch dahinter lag. Die sind jetzt weg, das Vollbild sollte also deutlich flüssiger laufen."
+    ]
+  },
+  {
+    "version": "1.3.12",
+    "date": "2026-10-24",
+    "en": [
+      "Linux: the render test can now play the song you have loaded, plain or through Web Audio like the visualizer does. That shows if the music is what slows Fumen down there."
+    ],
+    "de": [
+      "Linux: Der Rendertest kann jetzt den geladenen Song abspielen, einfach so oder über Web Audio wie der Visualizer. So sehen wir, ob die Musik Fumen dort ausbremst."
+    ]
+  },
+  {
+    "version": "1.3.11",
+    "date": "2026-10-24",
+    "en": [
+      "Linux: two more tests to find out why Fumen is slow there. Settings has a render test that runs the test page from the website inside Fumen's window, and Ctrl+F12 in the frame meter can now turn off all blur effects."
+    ],
+    "de": [
+      "Linux: zwei weitere Tests, um rauszufinden, warum Fumen dort langsam ist. In den Einstellungen gibt es einen Rendertest, der die Testseite von der Website in Fumens Fenster laufen lässt, und Strg+F12 im Frame-Meter kann jetzt alle Blur-Effekte ausschalten."
+    ]
+  },
+  {
+    "version": "1.3.10",
+    "date": "2026-10-24",
+    "en": [
+      "There's a changelog now. After an update Fumen shows what's new, and you can read all of it again under Settings, About."
+    ],
+    "de": [
+      "Es gibt jetzt einen Changelog. Nach einem Update zeigt Fumen, was neu ist, und unter Einstellungen, Über kannst du alles nochmal nachlesen."
+    ]
+  },
+  {
+    "version": "1.3.9",
+    "date": "2026-10-24",
+    "en": [
+      "In fullscreen the app behind it isn't drawn anymore, so the playfield and visualizer run faster. On Linux that's about half again as fast."
+    ],
+    "de": [
+      "Im Vollbild wird die App dahinter nicht mehr mitgezeichnet. Playfield und Visualizer laufen dadurch schneller, unter Linux etwa anderthalbmal so schnell."
+    ]
+  },
+  {
+    "version": "1.3.8",
+    "date": "2026-10-24",
+    "en": [
+      "Linux: no more background behind the playfield. It cost half the frame rate there.",
+      "Linux: Settings, Inspector opens WebKit's developer tools, to help find what's still slow."
+    ],
+    "de": [
+      "Linux: kein Hintergrund mehr hinter dem Playfield. Der hat dort die Hälfte der Bildrate gekostet.",
+      "Linux: Einstellungen, Inspector öffnet die Entwicklertools von WebKit, damit wir finden, was noch langsam ist."
+    ]
+  },
+  {
+    "version": "1.3.7",
+    "date": "2026-10-23",
+    "en": [
+      "Linux: songs now play as a stream instead of from memory, and the app redraws a lot less while one plays. That should stop most of the stutter."
+    ],
+    "de": [
+      "Linux: Songs laufen jetzt als Stream statt aus dem Speicher, und die App zeichnet beim Abspielen viel weniger neu. Das sollte das meiste Ruckeln beheben."
+    ]
+  },
+  {
+    "version": "1.3.6",
+    "date": "2026-10-23",
+    "en": [
+      "Ctrl+F11 in fullscreen shows the frames per second. Ctrl+F12 then tries it without parts of the page, so we can see what's slow on Linux."
+    ],
+    "de": [
+      "Strg+F11 im Vollbild zeigt die Bilder pro Sekunde. Strg+F12 probiert es dann ohne einzelne Teile der Seite, damit wir sehen, was unter Linux bremst."
+    ]
+  },
+  {
+    "version": "1.3.5",
+    "date": "2026-10-23",
+    "en": [
+      "Linux: the playfield and visualizer do a lot less work per frame.",
+      "Add beatmaps: downloaded sets now say \"in line for the next import\" instead of \"waiting for osu!lazer\", which sounded like lazer had to do something."
+    ],
+    "de": [
+      "Linux: Playfield und Visualizer haben pro Bild viel weniger zu tun.",
+      "Beatmaps hinzufügen: Geladene Sets zeigen jetzt \"wartet auf den nächsten Import\" statt \"wartet auf osu!lazer\". Das klang so, als müsste lazer etwas tun."
+    ]
+  },
+  {
+    "version": "1.3.4",
+    "date": "2026-10-23",
+    "en": [
+      "Linux: the playfield runs much smoother. Its glows are drawn once and reused instead of blurred every frame."
+    ],
+    "de": [
+      "Linux: Das Playfield läuft viel flüssiger. Die Leuchteffekte werden einmal gezeichnet und wiederverwendet, statt jedes Bild neu weichgezeichnet."
+    ]
+  },
+  {
+    "version": "1.3.3",
+    "date": "2026-10-22",
+    "en": [
+      "Linux: the app doesn't stutter anymore. The blurred backgrounds are prepared once instead of drawn live."
+    ],
+    "de": [
+      "Linux: Die App ruckelt nicht mehr. Die unscharfen Hintergründe werden einmal vorbereitet statt ständig live gezeichnet."
+    ]
+  },
+  {
+    "version": "1.3.2",
+    "date": "2026-10-22",
+    "en": [
+      "Songs skip the silence at their start and don't stay silent anymore when you start one while Fumen is in the background.",
+      "New in Settings: fade in and fade out between songs.",
+      "Fullscreen has a volume slider. The playfield shows your combo, can change pitch with the speed (NC / DC), remembers a skin per ruleset and lets you search skins.",
+      "Browse keeps its filters next to the rulesets, and the accent colour comes from the artwork right away."
+    ],
+    "de": [
+      "Songs überspringen die Stille am Anfang und bleiben nicht mehr stumm, wenn du einen startest, während Fumen im Hintergrund ist.",
+      "Neu in den Einstellungen: Ein- und Ausblenden zwischen Songs.",
+      "Das Vollbild hat einen Lautstärkeregler. Das Playfield zeigt deine Combo, kann die Tonhöhe mit dem Tempo ändern (NC / DC), merkt sich einen Skin pro Modus und du kannst Skins suchen.",
+      "Entdecken behält die Filter neben den Modi, und die Akzentfarbe kommt sofort aus dem Cover."
+    ]
+  },
+  {
+    "version": "1.3.1",
+    "date": "2026-10-22",
+    "en": [
+      "Visualizer: you can set how blurry the background is in its settings, from sharp to very soft."
+    ],
+    "de": [
+      "Visualizer: In den Einstellungen kannst du jetzt einstellen, wie unscharf der Hintergrund ist, von scharf bis ganz weich."
+    ]
+  },
+  {
+    "version": "1.3.0",
+    "date": "2026-10-21",
+    "en": [
+      "The fullscreen visualizer is completely new. It follows each song's loudness and hits on every kick and snare, no matter how loud you play it.",
+      "Pulses and kiai come from the beatmap's own timing.",
+      "Six styles: Spektrum, Ring, Wave, Starfield, Stage and Hi-Fi. Pick one from the dropdown or press V.",
+      "Colours from the cover, your accent or your own pick, plus a panel for reaction, sensitivity, bars, flashes, background, title and a beat offset. Everything is saved."
+    ],
+    "de": [
+      "Der Vollbild-Visualizer ist komplett neu. Er folgt der Lautstärke jedes Songs und reagiert auf jede Kick und Snare, egal wie laut du hörst.",
+      "Pulse und Kiai kommen aus dem Timing der Beatmap.",
+      "Sechs Stile: Spektrum, Ring, Wave, Starfield, Stage und Hi-Fi. Auswahl übers Dropdown oder mit V.",
+      "Farben aus dem Cover, deiner Akzentfarbe oder selbst gewählt, dazu ein Panel für Reaktion, Empfindlichkeit, Balken, Blitze, Hintergrund, Titel und einen Beat-Offset. Alles wird gespeichert."
+    ]
+  },
+  {
+    "version": "1.2.0",
+    "date": "2026-10-21",
+    "en": [
+      "New Tournament page. Build map pools slot by slot with star rating, pp, BPM and length at each slot's mods.",
+      "Fill slots from your library or from osu! by search or link. Maps you don't have come from the mirrors.",
+      "Export a pool as a sheet, CSV, JSON, bot lines or a showcase image.",
+      "Matches: link the multiplayer room and the games come in as they're played, with bans, picks and points.",
+      "A stream overlay for OBS, served only from your PC."
+    ],
+    "de": [
+      "Neue Turnier-Seite. Map-Pools Slot für Slot bauen, mit Sternen, pp, BPM und Länge bei den Mods des Slots.",
+      "Slots aus deiner Bibliothek oder von osu! füllen, per Suche oder Link. Maps, die du nicht hast, kommen von den Mirrors.",
+      "Pools exportieren als Tabelle, CSV, JSON, Bot-Zeilen oder Showcase-Bild.",
+      "Matches: Multiplayer-Raum verlinken, und die Spiele kommen rein, während gespielt wird, mit Bans, Picks und Punkten.",
+      "Ein Stream-Overlay für OBS, das nur von deinem PC kommt."
+    ]
+  },
+  {
+    "version": "1.1.5",
+    "date": "2026-10-21",
+    "en": [
+      "pp for every difficulty. The chart panel shows the most a play is worth at the mods you pick, plus 99/98/97/95%.",
+      "There's a calculator for any play, with a graph of how much each judgement costs."
+    ],
+    "de": [
+      "pp für jeden Schwierigkeitsgrad. Das Chart-Panel zeigt, was ein Play mit deinen Mods maximal bringt, dazu 99/98/97/95%.",
+      "Dazu ein Rechner für beliebige Plays, mit einer Grafik, wie viel jedes Judgement kostet."
+    ]
+  },
+  {
+    "version": "1.1.4",
+    "date": "2026-10-19",
+    "en": [
+      "Browse: no more second box inside the search field, and the placeholders while loading match the real sets."
+    ],
+    "de": [
+      "Entdecken: kein zweites Kästchen mehr im Suchfeld, und die Platzhalter beim Laden sehen aus wie die echten Sets."
+    ]
+  },
+  {
+    "version": "1.1.3",
+    "date": "2026-10-18",
+    "en": [
+      "New home page made of tiles: where you left off, this session, your goals, recently played and added, quick picks, collections and more."
+    ],
+    "de": [
+      "Neue Startseite aus Kacheln: wo du aufgehört hast, diese Session, deine Ziele, zuletzt gespielt und hinzugefügt, Vorschläge, Sammlungen und mehr."
+    ]
+  },
+  {
+    "version": "1.1.2",
+    "date": "2026-10-18",
+    "en": [
+      "Fumen can put downloaded sets into osu!stable too, if you turn it on in Settings, osu!stable. It never replaces or removes anything there."
+    ],
+    "de": [
+      "Fumen kann geladene Sets jetzt auch in osu!stable packen, wenn du das in den Einstellungen unter osu!stable einschaltest. Dort wird nie etwas ersetzt oder gelöscht."
+    ]
+  },
+  {
+    "version": "1.1.1",
+    "date": "2026-10-17",
+    "en": [
+      "The companion window doesn't stay white anymore and is smaller. Hover it and clicks go through to the game. Hold Ctrl to click it."
+    ],
+    "de": [
+      "Das Begleitfenster bleibt nicht mehr weiß und ist kleiner. Mit der Maus drüber gehen Klicks durch ins Spiel. Halt Strg gedrückt, um es anzuklicken."
+    ]
+  },
+  {
+    "version": "1.1.0",
+    "date": "2026-10-17",
+    "en": [
+      "After every pass in osu!lazer Fumen opens a score page: where your accuracy went, your timing, the replay and a button to practise the worst part.",
+      "A companion window over the game with your session, your last play against your best, and a pool to work through. Both are under Settings, While you play."
+    ],
+    "de": [
+      "Nach jedem Pass in osu!lazer öffnet Fumen eine Score-Seite: wo deine Accuracy hin ist, dein Timing, das Replay und ein Knopf zum Üben der schlimmsten Stelle.",
+      "Ein Begleitfenster über dem Spiel mit deiner Session, deinem letzten Play gegen dein bestes und einem Pool zum Durchspielen. Beides unter Einstellungen, Beim Spielen."
+    ]
+  },
+  {
+    "version": "1.0.2",
+    "date": "2026-10-17",
+    "en": [
+      "Security update. Beatmaps from mirrors are checked before they go into osu!lazer, and your osu! login is encrypted for your Windows user.",
+      "On the first start Fumen says what its start ping is, and you can turn it off right there."
+    ],
+    "de": [
+      "Sicherheitsupdate. Beatmaps von Mirrors werden geprüft, bevor sie in osu!lazer kommen, und dein osu!-Login ist für deinen Windows-Benutzer verschlüsselt.",
+      "Beim ersten Start sagt Fumen, was der Start-Ping ist, und du kannst ihn direkt da ausschalten."
+    ]
+  },
+  {
+    "version": "1.0.1",
+    "date": "2026-10-16",
+    "en": [
+      "Typing in the fullscreen player doesn't end up in the library search behind it anymore.",
+      "Fumen sends one ping when it starts so we know how many people use it: a random id and the version, nothing else. You can turn it off under Settings, About."
+    ],
+    "de": [
+      "Tippen im Vollbild-Player landet nicht mehr in der Bibliothekssuche dahinter.",
+      "Fumen schickt beim Start einen Ping, damit wir wissen, wie viele es benutzen: eine zufällige ID und die Version, sonst nichts. Abschalten kannst du das unter Einstellungen, Über."
+    ]
+  },
+  {
+    "version": "1.0.0",
+    "date": "2026-10-16",
+    "en": [
+      "Fumen 1.0! Installer and auto updates, English and German, four themes, and a website at fumen.dertesti.dev."
+    ],
+    "de": [
+      "Fumen 1.0! Installer und automatische Updates, Englisch und Deutsch, vier Themes und eine Website unter fumen.dertesti.dev."
+    ]
+  }
+]
