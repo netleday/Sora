@@ -1,0 +1,285 @@
+/* roulette.css — Sora Map Roulette view & filter modal */
+.roulette-page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 20px 24px 32px;
+  max-width: 1220px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.roulette-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.roulette-head-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.roulette-title {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text);
+  margin: 0;
+}
+
+.roulette-sub {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.roulette-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.roulette-source-seg {
+  display: inline-flex;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 3px;
+  gap: 3px;
+}
+
+.roulette-src-btn {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.roulette-src-btn.active {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.roulette-reel-box {
+  position: relative;
+  height: 176px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+}
+
+.roulette-reel-pointer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 3px;
+  transform: translateX(-50%);
+  background: var(--accent);
+  box-shadow: 0 0 18px var(--accent);
+  z-index: 4;
+  pointer-events: none;
+}
+
+.roulette-reel-track {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  will-change: transform;
+}
+
+.roulette-slot {
+  width: 196px;
+  height: 136px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.roulette-slot.winner {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.roulette-slot img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.55;
+}
+
+.roulette-slot-info {
+  position: relative;
+  z-index: 2;
+  padding: 8px 10px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.88));
+}
+
+.roulette-slot-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.roulette-slot-sr {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+.roulette-result-card {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 20px;
+  padding: 18px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+@media (max-width: 780px) {
+  .roulette-result-card {
+    grid-template-columns: 1fr;
+  }
+}
+
+.roulette-result-cover {
+  width: 100%;
+  height: 164px;
+  border-radius: 12px;
+  object-fit: cover;
+  background: var(--surface-2);
+}
+
+.roulette-result-body {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.roulette-result-title {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text);
+  margin: 0;
+}
+
+.roulette-result-meta {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.roulette-pills {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.roulette-pill {
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.roulette-result-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Filter Modal */
+.sora-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.68);
+  backdrop-filter: blur(8px);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.sora-modal {
+  width: min(560px, 100%);
+  max-height: 88vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 20px 22px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.sora-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sora-modal-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text);
+  margin: 0;
+}
+
+.sora-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.sora-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.sora-field label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.sora-field input,
+.sora-field select {
+  padding: 8px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13px;
+}

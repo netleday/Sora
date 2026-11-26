@@ -1,0 +1,36 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permissions for the main window",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-internal-toggle-maximize",
+    "core:window:allow-close",
+    "core:window:allow-start-dragging",
+    "core:window:allow-is-maximized",
+    "dialog:allow-open",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        {
+          "url": "https://osu.ppy.sh/*"
+        },
+        {
+          "url": "https://fumen.dertesti.dev/*"
+        },
+        {
+          "url": "osu://b/*"
+        },
+        {
+          "url": "osu://s/*"
+        }
+      ]
+    },
+    "updater:default"
+  ]
+}

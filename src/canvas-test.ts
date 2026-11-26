@@ -1,0 +1,276 @@
+/* canvas-test.ts — the render test page (canvas-test.html) in Sora's own window: a canvas the
+ * size of the window drawn every frame, 2D or WebGL, full or quarter size, with its frame rate;
+ * and with sound: the song Sora had loaded (Settings put its address in sessionStorage), as a
+ * plain audio element or through Web Audio with analysers read every frame, as the visualizer
+ * does (lib/eq). The website's copy (site/public/canvas-test.js, `npm run canvas-test`) is this
+ * file without types; it plays canvas-test.wav and has no way back. "Run all and copy report" goes
+ * through the tests by itself and writes what it measured, with the system, for sending in
+ * (fumen.dertesti.dev/linux). */
+export {}; // a module: its names aren't the window's (window.frames)
+
+const inApp = "__TAURI_INTERNALS__" in window;
+const songUrl = inApp ? sessionStorage.getItem("fumen.renderTestSong") : "canvas-test.wav";
+
+let mode: "2d" | "webgl" = "2d";
+let size = 1;
+let sound: "off" | "audio" | "webaudio" = "off";
+let layers = 0;
+let canvas: HTMLCanvasElement | null = null;
+let raf = 0;
+let frames = 0;
+let since = performance.now();
+/** frames since the running test (runAll) started counting */
+let counted = 0;
+const fps = document.getElementById("fps")!;
+if (!inApp) document.querySelector<HTMLElement>(".back")!.hidden = true;
+
+// ── sound ────────────────────────────────────────────────────────────────
+let audio: HTMLAudioElement | null = null;
+let ctx: AudioContext | null = null;
+let long: AnalyserNode | null = null;
+let short: AnalyserNode | null = null;
+let fLong = new Float32Array(0);
+let fShort = new Float32Array(0);
+let wave = new Float32Array(0);
+
+/** false when there's no song to play */
+function setSound(next: typeof sound): boolean {
+  if (next !== "off" && !songUrl) return false;
+  sound = next;
+  // Web Audio can't be taken off an element again: a fresh element (and context) each time
+  audio?.pause();
+  audio = null;
+  void ctx?.close();
+  ctx = long = short = null;
+  if (sound === "off") return true;
+  audio = new Audio();
+  audio.crossOrigin = "anonymous";
+  audio.loop = true;
+  audio.src = songUrl!;
+  if (sound === "webaudio") {
+    ctx = new AudioContext();
+    const source = ctx.createMediaElementSource(audio);
+    long = ctx.createAnalyser();
+    long.fftSize = 4096;
+    long.smoothingTimeConstant = 0;
+    short = ctx.createAnalyser();
+    short.fftSize = 2048;
+    short.smoothingTimeConstant = 0;
+    const volume = ctx.createGain();
+    volume.gain.value = 0.5;
+    source.connect(long);
+    long.connect(short);
+    short.connect(volume);
+    volume.connect(ctx.destination);
+    fLong = new Float32Array(long.frequencyBinCount);
+    fShort = new Float32Array(short.frequencyBinCount);
+    wave = new Float32Array(short.fftSize);
+  } else audio.volume = 0.5;
+  void audio.play().catch((e) => (fps.textContent = `The song doesn't play: ${e}`));
+  return true;
+}
+
+/** what the visualizer reads every frame */
+function readAnalysers(): void {
+  if (!long || !short) return;
+  long.getFloatFrequencyData(fLong);
+  short.getFloatFrequencyData(fShort);
+  short.getFloatTimeDomainData(wave);
+}
+
+// ── layers: window-sized see-through ones over the canvas, each its own compositing layer ──
+function setLayers(n: number): void {
+  layers = n;
+  document.querySelectorAll(".layer").forEach((l) => l.remove());
+  const bar = document.querySelector(".bar")!;
+  for (let i = 0; i < n; i++) {
+    const l = document.createElement("div");
+    l.className = "layer";
+    l.style.background = `linear-gradient(${i * 45}deg, hsl(${i * 40} 60% 50% / .06), transparent 70%)`;
+    bar.before(l);
+  }
+}
+
+// ── drawing ──────────────────────────────────────────────────────────────
+function make(): void {
+  cancelAnimationFrame(raf);
+  canvas?.remove();
+  const cv = (canvas = document.createElement("canvas"));
+  cv.style.width = cv.style.height = size === 1 ? "100%" : "50%";
+  document.body.prepend(cv);
+  const r = cv.getBoundingClientRect();
+  cv.width = Math.round(r.width * devicePixelRatio);
+  cv.height = Math.round(r.height * devicePixelRatio);
+  document.querySelectorAll<HTMLElement>("[data-mode]").forEach((b) => b.classList.toggle("on", b.dataset.mode === mode));
+  document.querySelectorAll<HTMLElement>("[data-size]").forEach((b) => b.classList.toggle("on", +b.dataset.size! === size));
+  document.querySelectorAll<HTMLElement>("[data-layers]").forEach((b) => b.classList.toggle("on", +b.dataset.layers! === layers));
+  document.querySelectorAll<HTMLElement>("[data-sound]").forEach((b) => b.classList.toggle("on", b.dataset.sound === sound));
+
+  let draw: (t: number) => void;
+  if (mode === "2d") {
+    const c = cv.getContext("2d")!;
+    draw = (t) => {
+      const { width: w, height: h } = cv;
+      c.fillStyle = "#101018";
+      c.fillRect(0, 0, w, h);
+      for (let i = 0; i < 60; i++) {
+        const x = ((t / 4 + i * 97) % (w + 200)) - 100;
+        const y = (i * 53) % h;
+        c.fillStyle = `hsl(${(i * 37) % 360} 70% 60%)`;
+        c.beginPath();
+        c.roundRect(x, y, 120, 24, 8);
+        c.fill();
+      }
+    };
+  } else {
+    const gl = cv.getContext("webgl");
+    if (!gl) {
+      fps.textContent = "WebGL not available here";
+      return;
+    }
+    draw = (t) => {
+      gl.viewport(0, 0, cv.width, cv.height);
+      gl.clearColor(0.06 + 0.04 * Math.sin(t / 300), 0.06, 0.1, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.enable(gl.SCISSOR_TEST);
+      for (let i = 0; i < 60; i++) {
+        const x = Math.round(((t / 4 + i * 97) % (cv.width + 200)) - 100);
+        const y = (i * 53) % cv.height;
+        gl.scissor(Math.max(0, x), y, 120, 24);
+        gl.clearColor(((i * 37) % 360) / 360, 0.6, 0.8, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+      }
+      gl.disable(gl.SCISSOR_TEST);
+    };
+  }
+
+  frames = 0;
+  since = performance.now();
+  fps.textContent = "…";
+  const frame = (t: number) => {
+    readAnalysers();
+    draw(t);
+    frames++;
+    counted++;
+    const now = performance.now();
+    if (now - since >= 1000) {
+      const heard = sound === "off" ? "no sound" : sound === "audio" ? "song" : "song + Web Audio";
+      fps.textContent = `${Math.round((frames * 1000) / (now - since))} fps · ${mode === "2d" ? "2D" : "WebGL"} · ${cv.width}×${cv.height} · ${heard} · ${layers} layers`;
+      frames = 0;
+      since = now;
+    }
+    raf = requestAnimationFrame(frame);
+  };
+  raf = requestAnimationFrame(frame);
+}
+
+// ── run all: every test in turn, then a report ────────────────────────────
+let running = false;
+const reportBox = document.querySelector<HTMLElement>(".report")!;
+const reportText = reportBox.querySelector("textarea")!;
+
+/** The graphics card's name as WebGL reports it, when it says. */
+function gpuName(): string | null {
+  try {
+    const gl = document.createElement("canvas").getContext("webgl");
+    const ext = gl?.getExtension("WEBGL_debug_renderer_info");
+    return (ext && gl?.getParameter(ext.UNMASKED_RENDERER_WEBGL)) || gl?.getParameter(gl.RENDERER) || null;
+  } catch {
+    return null;
+  }
+}
+
+/** "Label: value" lines about this computer: in Sora what Linux says (system_info), on the website the browser */
+async function systemLines(): Promise<string[]> {
+  const lines: string[] = [];
+  const tauri = (window as unknown as { __TAURI_INTERNALS__?: { invoke: (cmd: string) => Promise<unknown> } }).__TAURI_INTERNALS__;
+  if (tauri) {
+    lines.push(`Sora: ${await tauri.invoke("plugin:app|version").catch(() => "?")}`);
+    const info = (await tauri.invoke("system_info").catch(() => [])) as [string, string][];
+    for (const [k, v] of info) lines.push(`${k}: ${v}`);
+  } else lines.push(`Browser: ${navigator.userAgent}`);
+  const gpu = gpuName();
+  if (gpu) lines.push(`GPU (WebGL): ${gpu}`);
+  lines.push(`Screen: ${screen.width}×${screen.height} at ${devicePixelRatio}x · window ${innerWidth}×${innerHeight}`);
+  return lines;
+}
+
+async function copy(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    reportText.select();
+    return document.execCommand("copy");
+  }
+}
+
+async function runAll(): Promise<void> {
+  if (running) return;
+  running = true;
+  const tests: { name: string; mode: typeof mode; size: number; sound: typeof sound; layers: number }[] = [
+    { name: "2D canvas, full size", mode: "2d", size: 1, sound: "off", layers: 0 },
+    { name: "WebGL, full size", mode: "webgl", size: 1, sound: "off", layers: 0 },
+    { name: "2D canvas, quarter", mode: "2d", size: 0.5, sound: "off", layers: 0 },
+    { name: "2D canvas, 2 layers", mode: "2d", size: 1, sound: "off", layers: 2 },
+    { name: "2D canvas, 4 layers", mode: "2d", size: 1, sound: "off", layers: 4 },
+    ...(songUrl
+      ? ([
+          { name: "2D canvas, song", mode: "2d", size: 1, sound: "audio", layers: 0 },
+          { name: "2D canvas, song + Web Audio", mode: "2d", size: 1, sound: "webaudio", layers: 0 },
+        ] as const)
+      : []),
+  ];
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const rows: string[] = [];
+  for (const [i, test] of tests.entries()) {
+    mode = test.mode;
+    size = test.size;
+    setLayers(test.layers);
+    if (test.sound !== sound) setSound(test.sound);
+    make();
+    await wait(700); // the change settles first
+    counted = 0;
+    const from = performance.now();
+    await wait(3000);
+    const n = Math.round((counted * 1000) / (performance.now() - from));
+    rows.push(`${test.name}: ${n} fps`);
+    fps.textContent = `Test ${i + 1} of ${tests.length} done: ${n} fps`;
+  }
+  setSound("off");
+  setLayers(0);
+  mode = "2d";
+  size = 1;
+  make();
+  const text = ["Sora render test report", ...(await systemLines()), ...(songUrl ? [] : ["(no song loaded, so no sound tests)"]), "", ...rows].join("\n");
+  reportText.value = text;
+  reportBox.hidden = false;
+  reportBox.querySelector<HTMLElement>("[data-said]")!.textContent = (await copy(text)) ? "Report copied. Paste it where you send it." : "Copy the report below and paste it where you send it.";
+  running = false;
+}
+
+reportBox.addEventListener("click", (e) => {
+  const b = (e.target as Element).closest<HTMLElement>("button");
+  if (b?.classList.contains("close")) reportBox.hidden = true;
+  if (b?.classList.contains("copy")) void copy(reportText.value);
+});
+
+document.querySelector(".bar")!.addEventListener("click", (e) => {
+  const b = (e.target as Element).closest<HTMLElement>("button");
+  if (!b || running) return;
+  if (b.classList.contains("run")) return void runAll();
+  if (b.classList.contains("back")) {
+    location.href = "/";
+    return;
+  }
+  if (b.dataset.mode) mode = b.dataset.mode as typeof mode;
+  if (b.dataset.size) size = +b.dataset.size;
+  if (b.dataset.layers) setLayers(+b.dataset.layers);
+  if (b.dataset.sound && !setSound(b.dataset.sound as typeof sound)) {
+    fps.textContent = "No song: play one in Sora first, then open the test again";
+    return;
+  }
+  make();
+});
+addEventListener("resize", () => make());
+make();

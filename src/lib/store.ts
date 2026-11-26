@@ -1,0 +1,161 @@
+/* store.ts — app-wide state and a tiny typed event bus. */
+import { api } from "./api";
+import { DEFAULT_HUD_PREFS } from "./hud-layout";
+import { buildIndex, type LibIndex } from "./search";
+import type { LibraryStatus, ScanProgress, Settings, Snapshot, UiPrefs } from "./types";
+
+import { Emitter } from "./emitter";
+
+export { Emitter };
+
+export const DEFAULT_ACCENT = "#9d4edd";
+
+export const DEFAULT_PREFS: UiPrefs = {
+  accentMode: "fixed",
+  accent: DEFAULT_ACCENT,
+  themePreset: "midnight-violet",
+  panelOpacity: 0.78,
+  bgDim: 0.52,
+  bgBlur: 12,
+  customBgDataUrl: "/backgrounds/bg_1.png",
+  animeSfx: true,
+  showMascot: true,
+  ambient: true,
+  reduceMotion: false,
+  unicode: false,
+  theme: "dark",
+  volume: 0.6,
+  layout: "grid",
+  sort: "added",
+  sortDesc: true,
+  mode: -1,
+  keys: [],
+  sidebarCollapsed: false,
+  collapsedGroups: [],
+  shuffle: true,
+  repeat: "off",
+  skipSilence: true,
+  fadeIn: 0,
+  fadeOut: 0,
+  scrollSpeed: null,
+  playfieldSkin: null,
+  modeSkins: {},
+  hitsoundVolume: 0.6,
+  launchClient: "lazer",
+  fullscreenMode: "visual",
+  visualizer: {
+    style: "stage",
+    colors: "cover",
+    own: 0,
+    reaction: 0.7,
+    sensitivity: 0.5,
+    pulse: 0.6,
+    bars: 64,
+    mirror: true,
+    kiai: true,
+    flashes: "soft",
+    background: "blur",
+    blur: 0.4,
+    dim: 0.55,
+    title: true,
+    video: true,
+    storyboard: true,
+    offset: 0,
+    react: true,
+    stats: true,
+  },
+  defaultsApplied: false,
+  pingNoticed: false,
+  scoreAuto: true,
+  companion: false,
+  companionPool: null,
+  skillsLeftOut: {},
+  followOsu: false,
+  followSelect: true,
+  discord: true,
+  discordPulse: true,
+  tosuAutostart: true,
+  obs: {
+    serve: false,
+    connect: false,
+    host: "127.0.0.1",
+    port: 4455,
+    scenes: { on: false, select: "", play: "", results: "", closed: "" },
+    clips: { on: false, fc: true, best: true, close: true, marker: false, rename: true },
+    sessionFrom: 0,
+    hud: DEFAULT_HUD_PREFS,
+    keys: false,
+  },
+  heart: { id: null, name: null },
+};
+
+export const store = {
+  snap: null as Snapshot | null,
+  index: null as LibIndex | null,
+  settings: null as Settings | null,
+  prefs: { ...DEFAULT_PREFS } as UiPrefs,
+  status: null as LibraryStatus | null,
+  scan: null as ScanProgress | null,
+};
+
+export const events = new Emitter<{
+  library: Snapshot;
+  prefs: Partial<UiPrefs>;
+  scan: ScanProgress | null;
+  /** an import into lazer started, moved on or ended (views/import.ts) */
+  importing: boolean;
+  status: LibraryStatus;
+  /** "search the library for this" from anywhere (tags, mapper links) */
+  search: string;
+}>();
+
+export function setSnapshot(snap: Snapshot): void {
+  store.snap = snap;
+  store.index = buildIndex(snap);
+  events.emit("library", snap);
+}
+
+export async function reloadLibrary(): Promise<void> {
+  setSnapshot(await api.getLibrary());
+}
+
+export async function refreshStatus(): Promise<LibraryStatus> {
+  const status = await api.libraryStatus();
+  store.status = status;
+  events.emit("status", status);
+  return status;
+}
+
+export function loadPrefs(settings: Settings): void {
+  store.settings = settings;
+  store.prefs = { ...DEFAULT_PREFS, ...(settings.ui as Partial<UiPrefs>) };
+  // Stage became the visualizer's default (1.3.19); whoever used Sora before keeps Spectrum
+  const ui = (settings.ui ?? {}) as Partial<UiPrefs>;
+  if (Object.keys(ui).length && !ui.visualizer) store.prefs.visualizer = { ...DEFAULT_PREFS.visualizer, style: "spectrum" };
+  // the difficulty table became the set list (0.2)
+  if ((store.prefs.layout as string) === "table") store.prefs.layout = "list";
+}
+
+// Preference writes are applied immediately and persisted in one debounced batch.
+let pending: Partial<UiPrefs> = {};
+let saveTimer: number | undefined;
+
+export function setPrefs(patch: Partial<UiPrefs>): void {
+  Object.assign(store.prefs, patch);
+  Object.assign(pending, patch);
+  events.emit("prefs", patch);
+  clearTimeout(saveTimer);
+  saveTimer = window.setTimeout(() => void flushPrefs(), 400);
+}
+
+/** Writes what's pending now (before the window reloads, say). */
+export async function flushPrefs(): Promise<void> {
+  clearTimeout(saveTimer);
+  const ui = pending;
+  pending = {};
+  if (!Object.keys(ui).length) return;
+  await api
+    .updateSettings({ ui })
+    .then((s) => (store.settings = s))
+    .catch((e) => console.warn("[prefs] save failed", e));
+}

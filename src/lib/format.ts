@@ -1,0 +1,161 @@
+/* Formatting + osu! domain colours. Colours here are *content* (difficulty, grade), not decoration. */
+import { locale, t } from "./i18n";
+import type { MapRow, SetRow } from "./types";
+
+export const MODE_LABEL = ["osu!", "osu!taiko", "osu!catch", "osu!mania"] as const;
+export const MODE_SHORT = ["osu!", "taiko", "catch", "mania"] as const;
+
+export const modeLabel = (mode: number, ruleset?: string): string =>
+  MODE_LABEL[mode as 0 | 1 | 2 | 3] ?? ruleset ?? t("Custom");
+
+export const STATUS_LABEL: Record<number, string> = {
+  [-4]: t("Modified"),
+  [-3]: t("Local"),
+  [-2]: t("Graveyard"),
+  [-1]: t("WIP"),
+  0: t("Pending"),
+  1: t("Ranked"),
+  2: t("Approved"),
+  3: t("Qualified"),
+  4: t("Loved"),
+};
+export const statusLabel = (s: number): string => STATUS_LABEL[s] ?? t("Local");
+
+const nf = new Intl.NumberFormat(locale);
+export const num = (n: number): string => nf.format(n);
+
+const fixedFormats = new Map<number, Intl.NumberFormat>();
+/** `v` with exactly `digits` decimals, as the language writes them (German: 5,23). */
+export function fixed(v: number, digits: number): string {
+  let f = fixedFormats.get(digits);
+  if (!f) fixedFormats.set(digits, (f = new Intl.NumberFormat(locale, { minimumFractionDigits: digits, maximumFractionDigits: digits, useGrouping: false })));
+  return f.format(v);
+}
+
+export function duration(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
+}
+
+export const bpm = (v: number): string => (Math.abs(v - Math.round(v)) < 0.05 ? String(Math.round(v)) : fixed(v, 1));
+export const stars = (sr: number): string => fixed(sr, 2);
+/** A size in bytes: 812 KB, 4.6 MB, 39.1 GB (in thousands). */
+export function bytes(n: number): string {
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let v = n;
+  let u = 0;
+  while (v >= 1000 && u < units.length - 1) {
+    v /= 1000;
+    u++;
+  }
+  return `${u === 0 || v >= 100 ? Math.round(v) : fixed(v, 1)} ${units[u]}`;
+}
+/** "97.33%"; German puts a space before the sign: "97,33 %" */
+export const pct = (v: number, digits = 2): string => `${fixed(v * 100, digits)}%`;
+
+/** "7K" for mania, the ruleset name otherwise. */
+export function keysOrMode(map: MapRow): string {
+  return map.mode === 3 ? `${Math.round(map.cs)}K` : MODE_SHORT[map.mode as 0] ?? map.ruleset ?? "?";
+}
+
+/** Long-note share for mania; slider share elsewhere. */
+export const holdRatio = (map: MapRow): number => (map.objects > 0 ? map.holds / map.objects : 0);
+
+/** Average notes per second over the drain length. */
+export const nps = (map: MapRow): number => (map.length > 0 ? map.objects / (map.length / 1000) : 0);
+
+const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+export function relativeTime(ms: number, now = Date.now()): string {
+  const diff = (ms - now) / 1000;
+  const abs = Math.abs(diff);
+  if (abs < 60) return t("just now");
+  const units: [Intl.RelativeTimeFormatUnit, number][] = [
+    ["minute", 60],
+    ["hour", 3600],
+    ["day", 86400],
+    ["week", 604800],
+    ["month", 2629800],
+    ["year", 31557600],
+  ];
+  let unit: Intl.RelativeTimeFormatUnit = "minute";
+  let size = 60;
+  for (const [u, s] of units) if (abs >= s) [unit, size] = [u, s];
+  return rtf.format(Math.round(diff / size), unit);
+}
+
+const df = new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", year: "numeric" });
+export const date = (ms: number): string => df.format(new Date(ms));
+
+export function displayTitle(set: SetRow, unicode: boolean): string {
+  return (unicode && set.titleUnicode) || set.title || set.titleUnicode || t("Untitled");
+}
+export function displayArtist(set: SetRow, unicode: boolean): string {
+  return (unicode && set.artistUnicode) || set.artist || set.artistUnicode || t("Unknown artist");
+}
+
+// ── star rating colour (osu! difficulty spectrum, gamma-correct interpolation) ──
+const SR_DOMAIN = [0.1, 1.25, 2, 2.5, 3.3, 4.2, 4.9, 5.8, 6.7, 7.7, 9];
+const SR_RANGE = ["#4290fb", "#4fc0ff", "#4fffd5", "#7cff4f", "#f6f05c", "#ff8068", "#ff4e6f", "#c645b8", "#6563de", "#18158e", "#000000"].map(
+  (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)),
+);
+const srCache = new Map<number, string>();
+
+export function srColor(sr: number): string {
+  if (sr < 0.1) return "#aaaaaa";
+  if (sr >= 9) return "#000000";
+  const key = Math.round(sr * 100);
+  const hit = srCache.get(key);
+  if (hit) return hit;
+  let i = 0;
+  while (i < SR_DOMAIN.length - 2 && sr > SR_DOMAIN[i + 1]) i++;
+  const t = (sr - SR_DOMAIN[i]) / (SR_DOMAIN[i + 1] - SR_DOMAIN[i]);
+  const g = 2.2;
+  const c = SR_RANGE[i].map((a, k) => {
+    const b = SR_RANGE[i + 1][k];
+    const v = Math.pow(Math.pow(a / 255, g) * (1 - t) + Math.pow(b / 255, g) * t, 1 / g) * 255;
+    return Math.round(v).toString(16).padStart(2, "0");
+  });
+  const out = `#${c.join("")}`;
+  srCache.set(key, out);
+  return out;
+}
+
+/** Text colour on a star-rating chip. */
+export const srInk = (sr: number): string => (sr >= 6.5 ? "#ffd966" : "rgba(0, 0, 0, .78)");
+
+/** Star-rating chip. Very high ratings are near-black, so they get a faint ring on dark surfaces. */
+export function srChip(sr: number, extraClass = "", prefix = ""): string {
+  const cls = `sr-chip${extraClass ? " " + extraClass : ""}${sr >= 7.7 ? " deep" : ""}`;
+  return `<span class="${cls}" style="--c:${srColor(sr)};--ink:${srInk(sr)}">${prefix}${stars(sr)}</span>`;
+}
+
+// ── grades ──
+const RANKS: Record<number, { label: string; color: string; silver?: boolean }> = {
+  [-1]: { label: "F", color: "#ff5a5a" },
+  0: { label: "D", color: "#ff5a5a" },
+  1: { label: "C", color: "#ff8e5d" },
+  2: { label: "B", color: "#e3b130" },
+  3: { label: "A", color: "#88da20" },
+  4: { label: "S", color: "#02b5c3" },
+  5: { label: "S", color: "#c5d5dc", silver: true },
+  6: { label: "SS", color: "#de31ae" },
+  7: { label: "SS", color: "#d6d6e0", silver: true },
+};
+export const rankInfo = (rank: number) => RANKS[rank] ?? RANKS[-1];
+
+export const esc = (s: string | number | undefined | null): string =>
+  String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+
+/** Display names for the chart analysis' pattern tags. */
+const PATTERN_WORDS: Record<string, string> = {
+  stream: "stream", jumpstream: "jumpstream", handstream: "handstream", chordjack: "chordjack",
+  jacks: "jacks", ln: "LN", stamina: "stamina",
+};
+export const patternWords = (tags: string): string =>
+  tags.split(" ").filter(Boolean).map((t) => PATTERN_WORDS[t] ?? t).join(", ");
+
+/** What a difficulty's chart is, in a few words: the pattern report's category, else the tags. */
+export const mapPatternText = (m: MapRow): string => m.category ?? (m.patterns ? patternWords(m.patterns) : "");

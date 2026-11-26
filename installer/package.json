@@ -1,0 +1,8 @@
+{
+  "name": "sora-installer",
+  "version": "2.0.0",
+  "private": true,
+  "scripts": {
+    "tauri": "..\\node_modules\\.bin\\tauri.cmd"
+  }
+}

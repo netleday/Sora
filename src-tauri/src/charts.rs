@@ -1,0 +1,569 @@
+//! Charts for the UI, and chart analysis for the whole library.
+//!
+//! A single difficulty is read on demand for the chart panel (notes + full analysis). The library
+//! job analyses every difficulty once and caches a summary by `.osu` hash, so search can filter by
+//! pattern and peak density. lazer stores files content-addressed (and stable's get keys that
+//! change with the file, see stable.rs), so a cached row never goes stale.
+
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use rusqlite::{params, Connection};
+use serde::Serialize;
+
+use crate::analysis::{self, Analysis};
+use crate::chart::{self, Chart};
+use crate::error::{Error, Result};
+use crate::mma::{dan, patterns};
+use crate::mods::Mods;
+use crate::paths;
+use crate::stars;
+
+/// A difficulty's `.osu` file as text.
+pub fn read(files: &paths::Files, hash: &str) -> Result<String> {
+    let path = files.path(hash).ok_or_else(|| Error::known("chart-missing", "This difficulty has no chart file."))?;
+    let bytes = std::fs::read(&path).map_err(|e| match e.kind() {
+        std::io::ErrorKind::NotFound => Error::known("chart-missing", "This difficulty's .osu file is missing."),
+        _ => e.into(),
+    })?;
+    // very old files can be in a legacy code page; the parts we read are ASCII anyway
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+pub fn load(files: &paths::Files, hash: &str) -> Result<Chart> {
+    load_with(files, hash, Mods::NONE)
+}
+
+/// A difficulty with the mods that change it: the playfield's chart (osu!, osu!taiko, osu!catch)
+/// is built with them; the notes, analysis and star ratings stay the beatmap's own.
+pub fn load_with(files: &paths::Files, hash: &str, mods: Mods) -> Result<Chart> {
+    let text = read(files, hash)?;
+    let mut chart = chart::parse(&text);
+    match chart.mode {
+        0 => chart.osu = crate::osu::parse_with(&text, mods),
+        1 => chart.taiko = crate::taiko::parse_with(&text, mods),
+        2 => chart.catch = crate::catch::parse_with(&text, mods),
+        _ => {}
+    }
+    Ok(chart)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ChartOut<'a> {
+    mode: u8,
+    keys: u8,
+    /// `[time, lane, length]` per object (lane is the x position outside osu!mania)
+    notes: Vec<i32>,
+    /// `[time, beat length, meter]` per uninherited timing point
+    beats: Vec<f64>,
+    /// `[start, end]` per break
+    breaks: Vec<i32>,
+    /// `[start, end]` per kiai section
+    kiai: Vec<i32>,
+    /// osu!mania star rating at 0.5×, 0.55× … 2.0× (empty for other modes)
+    stars: Vec<f32>,
+    analysis: &'a Analysis,
+    /// osu!mania: the pattern report (ManiaMapAnalyser)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    report: Option<patterns::Report>,
+    /// osu!mania: the dan at 1×
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dan: Option<dan::Dan>,
+    /// osu!mania 4K to 7K: Etterna's MSD at 1×
+    #[serde(skip_serializing_if = "Option::is_none")]
+    msd: Option<crate::msd::Msd>,
+    /// osu!taiko: the chart as lazer plays it
+    #[serde(skip_serializing_if = "Option::is_none")]
+    taiko: Option<TaikoOut>,
+    /// osu!: the chart as lazer plays it
+    #[serde(skip_serializing_if = "Option::is_none")]
+    osu: Option<OsuOut>,
+    /// osu!catch: the chart as lazer plays it
+    #[serde(skip_serializing_if = "Option::is_none")]
+    catch: Option<CatchOut>,
+}
+
+/// osu!taiko for the playfield (see `taiko.rs`), flat like the notes.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TaikoOut {
+    /// `[time, kind, end, flags, extra]` per object: kind 0 centre, 1 rim, 2 drum roll, 3 swell;
+    /// flags 1 strong, 2 kiai; extra: a roll's first tick index into `ticks`, a swell's hits
+    objects: Vec<f64>,
+    /// every drum roll's ticks, roll after roll
+    ticks: Vec<f64>,
+    /// every drum roll's time between ticks, roll after roll
+    spacing: Vec<f64>,
+    /// `[time, multiplier]` scroll speed changes
+    scroll: Vec<f64>,
+    /// `[time, major]` bar lines
+    bars: Vec<f64>,
+    /// `[time, keys, object]` autoplay: keys 1 left centre, 2 right centre, 4 left rim, 8 right rim
+    presses: Vec<f64>,
+}
+
+fn taiko_out(t: &crate::taiko::Chart) -> TaikoOut {
+    let mut objects = Vec::with_capacity(t.objects.len() * 5);
+    let mut ticks = Vec::new();
+    let mut spacing = Vec::new();
+    for o in &t.objects {
+        if o.kind == crate::taiko::Kind::Roll {
+            spacing.push(o.spacing);
+        }
+        let flags = o.strong as u8 | (o.kiai as u8) << 1;
+        let extra = match o.kind {
+            crate::taiko::Kind::Roll => ticks.len() as f64,
+            crate::taiko::Kind::Swell => o.hits as f64,
+            _ => 0.0,
+        };
+        ticks.extend(&o.ticks);
+        objects.extend([o.time, o.kind.code() as f64, o.end, flags as f64, extra]);
+    }
+    TaikoOut {
+        objects,
+        ticks,
+        spacing,
+        scroll: t.scroll.iter().flat_map(|&(a, b)| [a, b]).collect(),
+        bars: t.bars.iter().flat_map(|&(a, b)| [a, b as u8 as f64]).collect(),
+        presses: t.presses.iter().flat_map(|p| [p.time, p.keys as f64, p.object as f64]).collect(),
+    }
+}
+
+/// An osu! difficulty for the playfield (see `osu.rs`), flat like the notes. Positions are
+/// stacked, in osu!pixels.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OsuOut {
+    /// `OsuHitObject.Scale` from CS: circles are 128 × this across
+    scale: f32,
+    /// approach time and fade-in, ms
+    preempt: f64,
+    fade_in: f64,
+    /// `[time, kind, end, x, y, colour, number, flags, a, b]` per object: kind 0 circle, 1 slider,
+    /// 2 spinner; colour the combo colour index (lazer's, from 1); number the one on the circle;
+    /// flags 1 new combo; a, b: a slider's index into `sliders`, a spinner's spins needed and
+    /// bonus spins
+    objects: Vec<f64>,
+    sliders: Vec<OsuSliderOut>,
+    /// `[time, x, y, buttons]` per autoplay frame: buttons 1 left, 2 right
+    frames: Vec<f64>,
+    /// the beatmap's own combo colours and slider colours, `[r, g, b]`
+    colours: Vec<[u8; 3]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    slider_border: Option<[u8; 3]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    slider_track: Option<[u8; 3]>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OsuSliderOut {
+    /// `[x, y]` per point of the path, as straight pieces
+    path: Vec<f32>,
+    spans: u32,
+    span_duration: f64,
+    /// `[time, path progress]` per tick
+    ticks: Vec<f64>,
+}
+
+fn round2(v: f64) -> f64 {
+    (v * 100.0).round() / 100.0
+}
+
+fn osu_out(c: &crate::osu::Chart) -> OsuOut {
+    let mut objects = Vec::with_capacity(c.objects.len() * 10);
+    let mut sliders = Vec::new();
+    for o in &c.objects {
+        let pos = o.pos + o.stack_offset(c.scale);
+        let kind = match o.kind {
+            crate::osu::Kind::Circle => 0.0,
+            crate::osu::Kind::Slider => 1.0,
+            crate::osu::Kind::Spinner => 2.0,
+        };
+        let (a, b) = match (&o.slider, o.kind) {
+            (Some(s), _) => {
+                sliders.push(OsuSliderOut {
+                    path: s.path.points.iter().flat_map(|p| [(pos.x + p.x), (pos.y + p.y)]).map(|v| ((v * 100.0).round() / 100.0) as f32).collect(),
+                    spans: s.spans,
+                    span_duration: s.span_duration,
+                    ticks: s.ticks.iter().flat_map(|&(t, p)| [round2(t), (p * 1e6).round() / 1e6]).collect(),
+                });
+                ((sliders.len() - 1) as f64, 0.0)
+            }
+            (None, crate::osu::Kind::Spinner) => (o.spins as f64, o.bonus_spins as f64),
+            _ => (0.0, 0.0),
+        };
+        objects.extend([
+            round2(o.time),
+            kind,
+            round2(o.end),
+            round2(pos.x as f64),
+            round2(pos.y as f64),
+            o.colour as f64,
+            (o.index_in_combo + 1) as f64,
+            o.new_combo as u8 as f64,
+            a,
+            b,
+        ]);
+    }
+    OsuOut {
+        scale: c.scale,
+        preempt: c.preempt,
+        fade_in: c.fade_in,
+        objects,
+        sliders,
+        frames: c.frames.iter().flat_map(|f| [round2(f.time), round2(f.pos.x as f64), round2(f.pos.y as f64), f.buttons as f64]).collect(),
+        colours: c.colours.clone(),
+        slider_border: c.slider_border,
+        slider_track: c.slider_track,
+    }
+}
+
+/// An osu!catch difficulty for the playfield (see `catch.rs`), flat like the notes.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CatchOut {
+    /// `CatchHitObject.Scale` from CS: the catcher is twice that
+    scale: f32,
+    /// how long objects fall, ms
+    preempt: f64,
+    /// `[time, kind, x, flags, index, banana]` per object: kind 0 fruit, 1 droplet, 2 tiny droplet,
+    /// 3 banana; flags 1 hyperdash, 2 last in combo; index the object it came from; banana its
+    /// number in the shower
+    objects: Vec<f64>,
+    /// `[time, x, dash]` per autoplay frame
+    frames: Vec<f64>,
+    /// the beatmap's own combo colours, `[r, g, b]`
+    colours: Vec<[u8; 3]>,
+}
+
+fn catch_out(c: &crate::catch::Chart) -> CatchOut {
+    CatchOut {
+        scale: c.scale,
+        preempt: c.preempt,
+        objects: c
+            .objects
+            .iter()
+            .flat_map(|o| {
+                let flags = o.hyper as u8 | (o.last_in_combo as u8) << 1;
+                [round2(o.time), o.kind.code() as f64, round2(o.x as f64), flags as f64, o.index as f64, o.banana as f64]
+            })
+            .collect(),
+        frames: c.frames.iter().flat_map(|f| [round2(f.time), round2(f.x as f64), f.dash as u8 as f64]).collect(),
+        colours: c.colours.clone(),
+    }
+}
+
+/// The chart for the UI; `mods` only turn osu!mania's columns round (Mirror), the playfield
+/// charts come built with them (`load_with`).
+pub fn chart_json(chart: &Chart, mods: Mods) -> Result<Vec<u8>> {
+    let analysis = analysis::analyse(chart);
+    let mania = chart.mode == 3;
+    // ManiaModMirror: column n of k is column k - 1 - n
+    let lane = |l: u8| if mods.mirror && chart.keys > 0 { chart.keys.saturating_sub(1).saturating_sub(l) } else { l };
+    let out = ChartOut {
+        mode: chart.mode,
+        keys: chart.keys,
+        notes: chart.objects.iter().flat_map(|o| [o.time, if mania { lane(o.lane) as i32 } else { o.x }, o.end - o.time]).collect(),
+        beats: chart
+            .timing
+            .iter()
+            .filter(|t| t.uninherited && t.beat_len > 0.0)
+            .flat_map(|t| [t.time, t.beat_len, t.meter as f64])
+            .collect(),
+        breaks: chart.breaks.iter().flat_map(|&(s, e)| [s, e]).collect(),
+        kiai: kiai_sections(chart, analysis.end),
+        stars: stars::mania_rates(chart),
+        analysis: &analysis,
+        report: patterns::report(chart),
+        dan: dan::rate(chart, 1.0),
+        msd: crate::msd::rate(chart, 1.0),
+        taiko: chart.taiko.as_ref().map(taiko_out),
+        osu: chart.osu.as_ref().map(osu_out),
+        catch: chart.catch.as_ref().map(catch_out),
+    };
+    Ok(serde_json::to_vec(&out)?)
+}
+
+/// Kiai is a flag on timing points: on from one point until a later point turns it off.
+fn kiai_sections(chart: &Chart, end: i32) -> Vec<i32> {
+    let mut out = Vec::new();
+    let mut open: Option<i32> = None;
+    for p in &chart.timing {
+        let t = p.time as i32;
+        match (open, p.kiai) {
+            (None, true) => open = Some(t),
+            (Some(s), false) if t > s => {
+                out.extend([s, t]);
+                open = None;
+            }
+            (Some(_), false) => open = None,
+            _ => {}
+        }
+    }
+    if let Some(s) = open.filter(|&s| end > s) {
+        out.extend([s, end]);
+    }
+    out
+}
+
+// ── library-wide cache ─────────────────────────────────────────────────────
+
+/// Difficulty hashes without a current analysis.
+pub fn pending(conn: &Connection) -> Result<Vec<String>> {
+    let mut st = conn.prepare(
+        "SELECT DISTINCT m.hash FROM maps m
+         LEFT JOIN chart_stats c ON c.hash = m.hash AND c.version = ?1
+         WHERE m.hash IS NOT NULL AND c.hash IS NULL",
+    )?;
+    let hashes = st.query_map([analysis::VERSION], |r| r.get(0))?.collect::<Result<_, _>>()?;
+    Ok(hashes)
+}
+
+pub struct Summary {
+    hash: String,
+    nps_avg: f32,
+    nps_peak: f32,
+    ln_time: f32,
+    jack_ratio: f32,
+    longest_burst: i32,
+    tags: String,
+    patterns: String,
+    sr: Option<f32>,
+    sr_ht: Option<f32>,
+    sr_dt: Option<f32>,
+    dan: Option<String>,
+    dan_value: Option<f32>,
+    category: Option<String>,
+    msd: Option<f32>,
+    msd_skill: Option<&'static str>,
+    /// the MSD at 0.7× … 2.0×, a tenth apart: 14 × [overall, the seven skillsets], as JSON
+    msd_rates: Option<String>,
+    /// osu!mania: the notes whatever the speed (msd.rs), the same for rate edits
+    notes_key: Option<String>,
+    /// osu!mania 4K and up: what vibro.rs finds at 1× (`Verdict::code`)
+    vibro: Option<u8>,
+}
+
+fn summarize(hash: &str, chart: &Chart) -> Summary {
+    let a = analysis::analyse(chart);
+    let rated = |rate: f64| (chart.mode == 3).then(|| stars::round2(stars::mania(chart, rate)));
+    let d = dan::rate(chart, 1.0);
+    let report = patterns::report(chart);
+    let all = crate::msd::all_rates(chart);
+    // 1× is the fourth of 0.7× … 2.0×
+    let msd = all.as_ref().map(|a| a[3]).filter(|m| m.overall > 0.0);
+    Summary {
+        hash: hash.to_owned(),
+        nps_avg: a.nps_avg,
+        nps_peak: a.nps_peak,
+        ln_time: a.ln_time,
+        jack_ratio: a.jack_ratio,
+        longest_burst: a.longest_burst,
+        tags: a.tags.join(" "),
+        patterns: serde_json::to_string(&a.patterns).unwrap_or_else(|_| "[]".into()),
+        sr: rated(1.0),
+        sr_ht: rated(0.75),
+        sr_dt: rated(1.5),
+        dan: d.as_ref().map(dan::Dan::label),
+        dan_value: d.and_then(|d| d.value),
+        category: report.map(|r| if r.sv() { format!("{} SV", r.category) } else { r.category }),
+        msd: msd.map(|m| m.overall),
+        msd_skill: msd.map(|m| m.top_skill()),
+        msd_rates: all.map(|a| serde_json::to_string(&a.iter().map(|m| m.to_array()).collect::<Vec<_>>()).unwrap_or_default()),
+        notes_key: crate::msd::notes_key(chart),
+        vibro: (chart.mode == 3 && chart.keys >= 4).then(|| crate::vibro::check(chart, 1.0).code()),
+    }
+}
+
+/// Reads and analyses files in parallel. Files that can't be read are left out (and retried on
+/// the next run) rather than cached as empty.
+pub fn analyse_batch(files: &paths::Files, hashes: &[String]) -> Vec<Summary> {
+    let next = AtomicUsize::new(0);
+    let workers = std::thread::available_parallelism().map_or(4, |n| n.get()).clamp(1, 8);
+    std::thread::scope(|s| {
+        let handles: Vec<_> = (0..workers)
+            .map(|_| {
+                s.spawn(|| {
+                    let mut out = Vec::new();
+                    loop {
+                        let i = next.fetch_add(1, Ordering::Relaxed);
+                        let Some(hash) = hashes.get(i) else { break };
+                        // a chart that breaks the reader or the analysis is skipped, not the run
+                        let one = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| load(files, hash).map(|chart| summarize(hash, &chart))));
+                        if let Ok(Ok(summary)) = one {
+                            out.push(summary);
+                        }
+                    }
+                    out
+                })
+            })
+            .collect();
+        handles.into_iter().flat_map(|h| h.join().unwrap_or_default()).collect()
+    })
+}
+
+pub fn store(conn: &mut Connection, rows: &[Summary]) -> Result<()> {
+    let tx = conn.transaction()?;
+    {
+        let mut st = tx.prepare(
+            "INSERT OR REPLACE INTO chart_stats
+               (hash, version, nps_avg, nps_peak, ln_time, jack_ratio, longest_burst, tags, patterns, sr_ht, sr_dt, dan, dan_value, category, sr, msd, msd_skill, msd_rates, notes_key, vibro)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
+        )?;
+        for r in rows {
+            st.execute(params![
+                r.hash,
+                analysis::VERSION,
+                r.nps_avg,
+                r.nps_peak,
+                r.ln_time,
+                r.jack_ratio,
+                r.longest_burst,
+                r.tags,
+                r.patterns,
+                r.sr_ht,
+                r.sr_dt,
+                r.dan,
+                r.dan_value,
+                r.category,
+                r.sr,
+                r.msd,
+                r.msd_skill,
+                r.msd_rates,
+                r.notes_key,
+                r.vibro
+            ])?;
+        }
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mirror_turns_mania_columns_round() {
+        let text = "osu file format v14\n[General]\nMode: 3\n[Difficulty]\nCircleSize:4\nOverallDifficulty:8\n[TimingPoints]\n0,500,4,1,0,100,1,0\n[HitObjects]\n64,192,1000,1,0,0:0:0:0:\n192,192,1200,1,0,0:0:0:0:\n448,192,1400,128,0,1600:0:0:0:0:\n";
+        let chart = chart::parse(text);
+        let notes = |mods| {
+            let v: serde_json::Value = serde_json::from_slice(&chart_json(&chart, mods).unwrap()).unwrap();
+            v["notes"].as_array().unwrap().iter().map(|n| n.as_i64().unwrap()).collect::<Vec<_>>()
+        };
+        assert_eq!(notes(Mods::NONE), vec![1000, 0, 0, 1200, 1, 0, 1400, 3, 200]);
+        assert_eq!(notes(Mods { mirror: true, ..Mods::NONE }), vec![1000, 3, 0, 1200, 2, 0, 1400, 0, 200]);
+    }
+
+    /// Analyses every difficulty of a real lazer install and prints what came out:
+    /// `FUMEN_TEST_STORAGE=%APPDATA%/osu FUMEN_TEST_EXPORT=<fumen-realm export> cargo test real_library -- --ignored --nocapture`
+    #[test]
+    #[ignore = "needs FUMEN_TEST_STORAGE (lazer data folder) and FUMEN_TEST_EXPORT"]
+    fn real_library() {
+        let (Some(storage), Some(export)) = (std::env::var_os("FUMEN_TEST_STORAGE"), std::env::var_os("FUMEN_TEST_EXPORT")) else { return };
+        let storage = std::path::PathBuf::from(storage);
+        let export: serde_json::Value = serde_json::from_slice(&std::fs::read(export).unwrap()).unwrap();
+        let mut names = std::collections::HashMap::new();
+        let mut hashes = Vec::new();
+        for set in export["sets"].as_array().unwrap() {
+            for m in set["maps"].as_array().unwrap() {
+                if let Some(h) = m["hash"].as_str() {
+                    names.insert(h.to_owned(), format!("{} [{}]", set["title"].as_str().or(m["title"].as_str()).unwrap_or("?"), m["version"].as_str().unwrap_or("?")));
+                    hashes.push(h.to_owned());
+                }
+            }
+        }
+        hashes.sort();
+        hashes.dedup();
+        let t = std::time::Instant::now();
+        let out = analyse_batch(&paths::Files::lazer(storage), &hashes);
+        eprintln!("analysed {} of {} charts in {:?}", out.len(), hashes.len(), t.elapsed());
+        let mut tags: std::collections::BTreeMap<String, usize> = Default::default();
+        for s in &out {
+            for t in s.tags.split_whitespace() {
+                *tags.entry(t.into()).or_default() += 1;
+            }
+        }
+        eprintln!("tags: {tags:?}");
+        let peak = out.iter().map(|s| s.nps_peak).fold(0f32, f32::max);
+        eprintln!("highest peak: {peak} notes/s");
+        // a sample per tag, to eyeball
+        for tag in ["stream", "jumpstream", "handstream", "chordjack", "jacks", "ln", "stamina"] {
+            for s in out.iter().filter(|s| s.tags.split_whitespace().next() == Some(tag) || (tag == "stamina" && s.tags.contains(tag))).take(4) {
+                eprintln!("{tag:>10}: {} → {} | peak {:.1}", names[&s.hash], s.tags, s.nps_peak);
+            }
+        }
+        assert_eq!(out.len(), hashes.len());
+    }
+
+    /// Chart files for the browser preview (tools/browser-preview), for every difficulty whose
+    /// title contains one of the comma-separated `FUMEN_PREVIEW_TITLES` (and every one already
+    /// there, refreshed). osu!mania charts also get `dans`: the dan at every rate the panel offers,
+    /// for the preview's `get_dan`, and `msds` the same for `get_msd`; every chart also comes with the mods that change it, as
+    /// `<id>+HR.json` and so on:
+    /// `FUMEN_TEST_STORAGE=… FUMEN_TEST_EXPORT=… FUMEN_PREVIEW_TITLES="FREEDOM DiVE,Ready Steady"
+    ///  FUMEN_PREVIEW_CHARTS=../tools/browser-preview/.cache/charts cargo test preview_charts -- --ignored`
+    #[test]
+    #[ignore = "writes chart files for the browser preview"]
+    fn preview_charts() {
+        let var = std::env::var_os;
+        let (Some(storage), Some(export), Some(titles), Some(out)) =
+            (var("FUMEN_TEST_STORAGE"), var("FUMEN_TEST_EXPORT"), var("FUMEN_PREVIEW_TITLES"), var("FUMEN_PREVIEW_CHARTS"))
+        else {
+            return;
+        };
+        let storage = std::path::PathBuf::from(storage);
+        let out = std::path::PathBuf::from(out);
+        std::fs::create_dir_all(&out).unwrap();
+        let wanted: Vec<String> =
+            titles.to_string_lossy().split(',').map(|t| t.trim().to_lowercase()).filter(|t| !t.is_empty()).collect();
+        let export: serde_json::Value = serde_json::from_slice(&std::fs::read(export).unwrap()).unwrap();
+        let mut written = 0;
+        for set in export["sets"].as_array().unwrap() {
+            let files = crate::hitsounds::SetFiles::new(serde_json::from_value::<Vec<(String, String)>>(set["sounds"].clone()).unwrap_or_default());
+            for m in set["maps"].as_array().unwrap() {
+                let title = m["title"].as_str().unwrap_or_default().to_lowercase();
+                let (Some(id), Some(hash)) = (m["id"].as_str(), m["hash"].as_str()) else { continue };
+                let file = out.join(format!("{id}.json"));
+                if !wanted.iter().any(|w| title.contains(w.as_str())) && !file.exists() {
+                    continue;
+                }
+                let Ok(chart) = load(&paths::Files::lazer(&storage), hash) else { continue };
+                let mut v: serde_json::Value = serde_json::from_slice(&chart_json(&chart, Mods::NONE).unwrap()).unwrap();
+                let read = |h: &str| paths::lazer_file(&storage, h).and_then(|p| std::fs::read(p).ok()).map(|b| String::from_utf8_lossy(&b).into_owned());
+                if let Some(osu) = read(hash) {
+                    let osb = files.storyboard().and_then(read);
+                    v["hitsounds"] = serde_json::to_value(crate::hitsounds::resolve(&osu, osb.as_deref(), &files)).unwrap();
+                }
+                if chart.mode == 3 {
+                    let dans: serde_json::Map<String, serde_json::Value> = stars::RATES
+                        .map(|r| r as f64 * stars::RATE_STEP)
+                        .map(|r| (format!("{r:.2}"), serde_json::to_value(dan::rate(&chart, r)).unwrap()))
+                        .collect();
+                    v["dans"] = dans.into();
+                    let msds: serde_json::Map<String, serde_json::Value> = stars::RATES
+                        .map(|r| r as f64 * stars::RATE_STEP)
+                        .map(|r| (format!("{r:.2}"), serde_json::to_value(crate::msd::rate(&chart, r)).unwrap()))
+                        .collect();
+                    v["msds"] = msds.into();
+                }
+                std::fs::write(file, serde_json::to_vec(&v).unwrap()).unwrap();
+                written += 1;
+                // the ruleset's chart mods, one at a time and Easy / Hard Rock with Mirror
+                let (ez, hr, mr) = (Mods { easy: true, ..Mods::NONE }, Mods { hard_rock: true, ..Mods::NONE }, Mods { mirror: true, ..Mods::NONE });
+                let variants: &[(&str, Mods)] = match chart.mode {
+                    0 => &[("EZ", ez), ("HR", hr), ("MR", mr), ("EZMR", Mods { mirror: true, ..ez })],
+                    1 => &[("EZ", ez), ("HR", hr)],
+                    2 => &[("EZ", ez), ("HR", hr), ("MR", mr), ("EZMR", Mods { mirror: true, ..ez }), ("HRMR", Mods { mirror: true, ..hr })],
+                    _ => &[("MR", mr)],
+                };
+                for &(key, mods) in variants {
+                    let Ok(c) = load_with(&paths::Files::lazer(&storage), hash, mods) else { continue };
+                    std::fs::write(out.join(format!("{id}+{key}.json")), chart_json(&c, mods).unwrap()).unwrap();
+                }
+            }
+        }
+        eprintln!("wrote {written} charts to {}", out.display());
+    }
+}
